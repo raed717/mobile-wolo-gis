@@ -1,133 +1,206 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
   Text,
+  FlatList,
+  RefreshControl,
   TouchableOpacity,
   StatusBar,
-  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { APP_CONFIG } from '../../config/constants';
-import { CustomButton } from '../../components/common/CustomButton';
 import { useAuth } from '../../context/AuthContext';
+import { useProjects } from '../../hooks/useProjects';
+import { ProjectCard } from '../../components/project/ProjectCard';
+import { ProjectSearchBar } from '../../components/project/ProjectSearchBar';
+import { ProjectFilterChips } from '../../components/project/ProjectFilterChips';
+import { ProjectDetailModal } from '../../components/project/ProjectDetailModal';
+import { ProjectMapModal } from '../map/ProjectMapModal';
+import { EmptyState } from '../../components/common/EmptyState';
+import { Project } from '../../types/project.types';
 
 export const HomeScreen: React.FC = () => {
-  const { user, logout, isLoading } = useAuth();
+  const { user, logout, isLoading: isAuthLoading } = useAuth();
+  const {
+    projects,
+    allProjectsCount,
+    isLoading,
+    isRefreshing,
+    error,
+    isAdmin,
+    userOrgId,
+    searchQuery,
+    setSearchQuery,
+    activeFilter,
+    setActiveFilter,
+    refresh,
+    retry,
+  } = useProjects();
+
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [mapProject, setMapProject] = useState<Project | null>(null);
+
+  const handleOpenMap = (project: Project) => {
+    setMapProject(project);
+  };
+
+  const renderHeader = () => (
+    <View style={styles.listHeaderContainer}>
+      {/* Search Bar */}
+      <ProjectSearchBar
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
+
+      {/* Filter Tabs */}
+      <ProjectFilterChips
+        activeFilter={activeFilter}
+        onSelectFilter={setActiveFilter}
+        totalCount={allProjectsCount}
+        isAdmin={isAdmin}
+      />
+
+      {/* Section Title & Subtitle */}
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionTitle}>
+            {isAdmin ? 'All System Projects' : 'Organization Projects'}
+          </Text>
+          <View style={styles.countBadge}>
+            <Text style={styles.countBadgeText}>{projects.length}</Text>
+          </View>
+        </View>
+        <Text style={styles.sectionSubtitle}>
+          {isAdmin
+            ? 'Administrator Access • Viewing projects across all organizations'
+            : userOrgId
+            ? `Viewing projects for Organization #${userOrgId}`
+            : 'Viewing your assigned projects'}
+        </Text>
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bgDark} />
       <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.appName}>{APP_CONFIG.appName}</Text>
-            <Text style={styles.greeting}>Welcome back,</Text>
-            <Text style={styles.userName}>
-              {user?.firstName && user?.lastName
-                ? `${user.firstName} ${user.lastName}`
-                : user?.email || 'Authenticated User'}
+        {/* Top Navbar */}
+        <View style={styles.navbar}>
+          <View style={styles.navLeft}>
+            <View style={styles.brandRow}>
+              <Text style={styles.appBadge}>{APP_CONFIG.appName}</Text>
+              <View style={[styles.roleBadge, isAdmin ? styles.adminBadge : styles.userBadge]}>
+                <Ionicons
+                  name={isAdmin ? 'shield-checkmark' : 'person-outline'}
+                  size={11}
+                  color={isAdmin ? Colors.secondary : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.roleBadgeText,
+                    isAdmin ? styles.adminBadgeText : styles.userBadgeText,
+                  ]}
+                >
+                  {user?.role || 'User'}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.welcomeText}>
+              Welcome,{' '}
+              <Text style={styles.welcomeName}>
+                {user?.userName || user?.email?.split('@')[0] || 'User'}
+              </Text>
             </Text>
           </View>
 
           <TouchableOpacity
-            style={styles.logoutIconButton}
+            style={styles.logoutButton}
             onPress={logout}
-            disabled={isLoading}
+            disabled={isAuthLoading}
+            activeOpacity={0.7}
           >
-            <Ionicons name="log-out-outline" size={22} color={Colors.secondary} />
+            <Ionicons name="log-out-outline" size={20} color={Colors.secondary} />
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
-          {/* Status Card */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="shield-checkmark" size={20} color={Colors.success} />
-              <Text style={styles.cardTitle}>Session Active</Text>
-            </View>
-            <Text style={styles.cardSubtitle}>
-              Connected securely to the SMARTOWN backend server.
-            </Text>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>User ID:</Text>
-              <Text style={styles.infoValue}>{user?.id ?? 'N/A'}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Email:</Text>
-              <Text style={styles.infoValue}>{user?.email ?? 'N/A'}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Role:</Text>
-              <Text style={[styles.infoValue, styles.roleBadge]}>
-                {user?.role ?? 'User'}
-              </Text>
-            </View>
-
-            {user?.organizationId && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Org ID:</Text>
-                <Text style={styles.infoValue}>#{user.organizationId}</Text>
-              </View>
+        {/* Main List */}
+        {isLoading && !isRefreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.secondary} />
+            <Text style={styles.loadingText}>Loading projects...</Text>
+          </View>
+        ) : error ? (
+          <EmptyState
+            iconName="alert-circle-outline"
+            title="Failed to Load Projects"
+            description={error}
+            actionTitle="Try Again"
+            onAction={retry}
+          />
+        ) : (
+          <FlatList
+            data={projects}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={({ item }) => (
+              <ProjectCard
+                project={item}
+                onPress={setSelectedProject}
+                onViewOnMap={(p) => handleOpenMap(p)}
+              />
             )}
+            ListHeaderComponent={renderHeader}
+            ListEmptyComponent={
+              <EmptyState
+                iconName={searchQuery ? 'search-outline' : 'folder-open-outline'}
+                title={searchQuery ? 'No Projects Found' : 'No Projects Available'}
+                description={
+                  searchQuery
+                    ? `No projects match "${searchQuery}". Try a different keyword or reset filters.`
+                    : isAdmin
+                    ? 'No projects exist on the server yet.'
+                    : 'There are no projects assigned to your organization at this time.'
+                }
+                actionTitle={searchQuery ? 'Clear Search' : 'Refresh'}
+                onAction={searchQuery ? () => setSearchQuery('') : refresh}
+              />
+            }
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={refresh}
+                tintColor={Colors.secondary}
+                colors={[Colors.secondary, Colors.primary]}
+              />
+            }
+          />
+        )}
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Status:</Text>
-              <Text style={[styles.infoValue, { color: Colors.success }]}>
-                {user?.status ?? 'Active'}
-              </Text>
-            </View>
-          </View>
+        {/* Project Detail Modal */}
+        <ProjectDetailModal
+          project={selectedProject}
+          visible={!!selectedProject}
+          onClose={() => setSelectedProject(null)}
+          onViewOnMap={(p) => handleOpenMap(p)}
+        />
 
-          {/* Quick Actions / Modules Placeholder */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Smartown Mobile Modules</Text>
-          </View>
-
-          <View style={styles.grid}>
-            <View style={styles.gridItem}>
-              <Ionicons name="map-outline" size={32} color={Colors.secondary} />
-              <Text style={styles.gridItemTitle}>GIS Map</Text>
-              <Text style={styles.gridItemSubtitle}>Layers & Markers</Text>
-            </View>
-
-            <View style={styles.gridItem}>
-              <Ionicons name="camera-outline" size={32} color={Colors.secondary} />
-              <Text style={styles.gridItemTitle}>360° Survey</Text>
-              <Text style={styles.gridItemSubtitle}>Field Inspection</Text>
-            </View>
-
-            <View style={styles.gridItem}>
-              <Ionicons name="cube-outline" size={32} color={Colors.secondary} />
-              <Text style={styles.gridItemTitle}>3D Objects</Text>
-              <Text style={styles.gridItemSubtitle}>Orthomosaic & GIS</Text>
-            </View>
-
-            <View style={styles.gridItem}>
-              <Ionicons name="stats-chart-outline" size={32} color={Colors.secondary} />
-              <Text style={styles.gridItemTitle}>Analytics</Text>
-              <Text style={styles.gridItemSubtitle}>Project Reports</Text>
-            </View>
-          </View>
-
-          {/* Logout Action */}
-          <View style={styles.logoutWrapper}>
-            <CustomButton
-              title="Sign Out"
-              onPress={logout}
-              loading={isLoading}
-              variant="outline"
-            />
-          </View>
-        </ScrollView>
+        {/* Project Map Modal (Single Project Focus) */}
+        <ProjectMapModal
+          visible={!!mapProject}
+          project={mapProject}
+          onClose={() => setMapProject(null)}
+          onOpenDetails={(p) => {
+            setMapProject(null);
+            setTimeout(() => setSelectedProject(p), 250);
+          }}
+        />
       </SafeAreaView>
     </View>
   );
@@ -141,130 +214,124 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  header: {
+  navbar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
-  appName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.secondary,
-    letterSpacing: 1.5,
+  navLeft: {
+    flex: 1,
   },
-  greeting: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  logoutIconButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  content: {
-    padding: 20,
-  },
-  card: {
-    backgroundColor: '#161a2e',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    marginBottom: 24,
-  },
-  cardHeader: {
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 4,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  cardSubtitle: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginBottom: 12,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    marginVertical: 10,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  infoLabel: {
-    fontSize: 14,
-    color: Colors.textMuted,
-  },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
+  appBadge: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.secondary,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
   },
   roleBadge: {
-    color: Colors.secondary,
-    backgroundColor: 'rgba(255, 156, 92, 0.12)',
-    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 6,
-    overflow: 'hidden',
+    borderRadius: 10,
+    gap: 4,
+  },
+  adminBadge: {
+    backgroundColor: 'rgba(255, 156, 92, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 156, 92, 0.3)',
+  },
+  adminBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.secondary,
+  },
+  userBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  userBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  roleBadgeText: {
+    fontSize: 10,
+  },
+  welcomeText: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    marginTop: 3,
+  },
+  welcomeName: {
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  logoutButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  listContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 30,
+  },
+  listHeaderContainer: {
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   sectionHeader: {
-    marginBottom: 14,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
     color: Colors.textPrimary,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 24,
+  countBadge: {
+    backgroundColor: 'rgba(255, 156, 92, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
   },
-  gridItem: {
-    width: '48%',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    alignItems: 'flex-start',
-  },
-  gridItemTitle: {
-    fontSize: 15,
+  countBadgeText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: Colors.textPrimary,
-    marginTop: 10,
+    color: Colors.secondary,
   },
-  gridItemSubtitle: {
+  sectionSubtitle: {
     fontSize: 12,
     color: Colors.textMuted,
-    marginTop: 2,
+    marginTop: 3,
   },
-  logoutWrapper: {
-    marginTop: 8,
-    marginBottom: 30,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
   },
 });
