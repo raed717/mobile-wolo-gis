@@ -1,24 +1,76 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Project } from '../../types/project.types';
+import { SurveyCaptureItem, UserLocation } from '../../types/survey.types';
 import { Colors } from '../../theme/colors';
+
+export interface ProjectMapViewRef {
+  flyToLocation: (lat: number, lng: number, zoom?: number) => void;
+}
 
 interface ProjectMapViewProps {
   project: Project;
+  userLocation?: UserLocation | null;
+  captures?: SurveyCaptureItem[];
+  onSelectCapture?: (capture: SurveyCaptureItem) => void;
   style?: any;
 }
 
-export const ProjectMapView: React.FC<ProjectMapViewProps> = ({ project, style }) => {
-  const webViewRef = useRef<WebView>(null);
+export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>(
+  ({ project, userLocation = null, captures = [], onSelectCapture, style }, ref) => {
+    const webViewRef = useRef<WebView>(null);
 
-  const lat = typeof project.lat === 'number' && !isNaN(project.lat) ? project.lat : 36.8065;
-  const lng = typeof project.lng === 'number' && !isNaN(project.lng) ? project.lng : 10.1815;
+    const lat = typeof project.lat === 'number' && !isNaN(project.lat) ? project.lat : 36.8065;
+    const lng = typeof project.lng === 'number' && !isNaN(project.lng) ? project.lng : 10.1815;
 
-  const htmlContent = useMemo(() => {
-    const projectJson = JSON.stringify(project);
+    // Expose flyToLocation method to parent via ref
+    useImperativeHandle(ref, () => ({
+      flyToLocation: (targetLat: number, targetLng: number, zoom = 18) => {
+        if (webViewRef.current) {
+          const js = `
+            if (window.map) {
+              window.map.flyTo([${targetLat}, ${targetLng}], ${zoom}, { animate: true, duration: 1.2 });
+            }
+            true;
+          `;
+          webViewRef.current.injectJavaScript(js);
+        }
+      },
+    }));
 
-    return `
+    // Inject JS updates directly when captures or userLocation changes
+    useEffect(() => {
+      if (webViewRef.current && captures) {
+        const capturesJson = JSON.stringify(captures);
+        const js = `
+          if (window.renderCaptures) {
+            window.renderCaptures(${capturesJson});
+          }
+          true;
+        `;
+        webViewRef.current.injectJavaScript(js);
+      }
+    }, [captures]);
+
+    useEffect(() => {
+      if (webViewRef.current && userLocation) {
+        const locJson = JSON.stringify(userLocation);
+        const js = `
+          if (window.renderUserLocation) {
+            window.renderUserLocation(${locJson});
+          }
+          true;
+        `;
+        webViewRef.current.injectJavaScript(js);
+      }
+    }, [userLocation]);
+
+    const htmlContent = useMemo(() => {
+      const initialCapturesJson = JSON.stringify(captures);
+      const initialLocationJson = JSON.stringify(userLocation);
+
+      return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -46,66 +98,76 @@ export const ProjectMapView: React.FC<ProjectMapViewProps> = ({ project, style }
       color: #ff9c5c !important;
     }
 
-    /* Custom Popup */
-    .leaflet-popup-content-wrapper {
-      background: #16192e !important;
-      color: #ffffff !important;
-      border-radius: 12px !important;
-      border: 1px solid rgba(255, 156, 92, 0.4) !important;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.6) !important;
-      padding: 4px;
-    }
-    .leaflet-popup-tip {
-      background: #16192e !important;
-      border: 1px solid rgba(255, 156, 92, 0.4) !important;
-    }
-    .leaflet-popup-content {
-      margin: 10px 14px !important;
-      line-height: 1.4;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    .popup-title {
-      font-size: 15px;
-      font-weight: 700;
-      color: #ff9c5c;
-      margin-bottom: 4px;
-    }
-    .popup-meta {
-      font-size: 12px;
-      color: #94a3b8;
-    }
-    .popup-coords {
-      font-size: 11px;
-      color: #64748b;
-      margin-top: 4px;
-    }
-
-    /* Custom Marker Pin */
-    .custom-pin {
+    /* Live GPS User Location Marker */
+    .user-gps-container {
+      position: relative;
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
       justify-content: center;
+    }
+    .user-gps-dot {
+      width: 14px;
+      height: 14px;
+      background-color: #007aff;
+      border: 2.5px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(0, 122, 255, 0.9);
+      z-index: 2;
+    }
+    .user-gps-pulse {
+      position: absolute;
       width: 36px;
       height: 36px;
-      border-radius: 50% 50% 50% 0;
-      background: #50246f;
-      border: 2px solid #ff9c5c;
-      transform: rotate(-45deg);
-      box-shadow: 0 0 18px rgba(255, 156, 92, 0.6);
-      animation: pulse 2s infinite ease-in-out;
-    }
-    .custom-pin::after {
-      content: '';
-      width: 12px;
-      height: 12px;
-      background: #ffffff;
+      background-color: rgba(0, 122, 255, 0.35);
       border-radius: 50%;
-      position: absolute;
+      animation: gps-pulse 2s infinite ease-out;
+    }
+    @keyframes gps-pulse {
+      0% { transform: scale(0.4); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
     }
 
-    @keyframes pulse {
-      0%, 100% { transform: rotate(-45deg) scale(1); }
-      50% { transform: rotate(-45deg) scale(1.1); box-shadow: 0 0 24px rgba(255, 156, 92, 0.9); }
+    /* Custom Camera Marker Pin */
+    .camera-pin-wrapper {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .camera-pin-head {
+      width: 40px;
+      height: 40px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      background: #ff9c5c;
+      border: 2.5px solid #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+      transition: transform 0.15s ease;
+    }
+    .camera-pin-icon {
+      transform: rotate(45deg);
+      font-size: 18px;
+      line-height: 1;
+    }
+    .camera-pin-ring {
+      position: absolute;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: 2px solid #ff9c5c;
+      animation: cam-ring 2s infinite ease-out;
+      pointer-events: none;
+    }
+    @keyframes cam-ring {
+      0% { transform: scale(0.6); opacity: 1; }
+      100% { transform: scale(1.4); opacity: 0; }
     }
   </style>
 </head>
@@ -113,9 +175,10 @@ export const ProjectMapView: React.FC<ProjectMapViewProps> = ({ project, style }
   <div id="map"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const p = ${projectJson};
     const lat = ${lat};
     const lng = ${lng};
+    let captures = ${initialCapturesJson};
+    let userLoc = ${initialLocationJson};
 
     // Tile Layers
     const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -133,15 +196,18 @@ export const ProjectMapView: React.FC<ProjectMapViewProps> = ({ project, style }
       attribution: '© CARTO Dark'
     });
 
-    // Initialize Map directly on project coordinates
+    // Initialize Map
+    const initialCenter = userLoc && userLoc.latitude ? [userLoc.latitude, userLoc.longitude] : [lat, lng];
+    const initialZoom = userLoc && userLoc.latitude ? 17 : 16;
+
     const map = L.map('map', {
-      center: [lat, lng],
-      zoom: 16,
+      center: initialCenter,
+      zoom: initialZoom,
       layers: [streets],
       zoomControl: true
     });
+    window.map = map;
 
-    // Layer Control
     const baseMaps = {
       "Streets": streets,
       "Satellite": satellite,
@@ -149,54 +215,134 @@ export const ProjectMapView: React.FC<ProjectMapViewProps> = ({ project, style }
     };
     L.control.layers(baseMaps, null, { position: 'topright' }).addTo(map);
 
-    // Custom Project Marker
-    const customIcon = L.divIcon({
-      className: 'custom-pin-container',
-      html: '<div class="custom-pin"></div>',
-      iconSize: [36, 36],
-      iconAnchor: [18, 36],
-      popupAnchor: [0, -36]
-    });
+    // User GPS Location Marker
+    let userGpsMarker = null;
+    window.renderUserLocation = function(loc) {
+      if (!loc || typeof loc.latitude !== 'number') return;
+      if (userGpsMarker) {
+        userGpsMarker.setLatLng([loc.latitude, loc.longitude]);
+      } else {
+        const userIcon = L.divIcon({
+          className: 'user-gps-wrapper',
+          html: '<div class="user-gps-container"><div class="user-gps-pulse"></div><div class="user-gps-dot"></div></div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        userGpsMarker = L.marker([loc.latitude, loc.longitude], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+      }
+    };
+    if (userLoc) {
+      window.renderUserLocation(userLoc);
+    }
 
-    const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
-    
-    const popupContent = 
-      '<div class="popup-title">' + (p.name || 'Project') + '</div>' +
-      '<div class="popup-meta">' + (p.location || (p.organization ? p.organization.name : '')) + '</div>' +
-      '<div class="popup-coords">Lat: ' + lat.toFixed(5) + ', Lng: ' + lng.toFixed(5) + '</div>';
+    // Survey Captures Layer Group
+    const capturesLayer = L.layerGroup().addTo(map);
 
-    marker.bindPopup(popupContent).openPopup();
+    window.renderCaptures = function(items) {
+      capturesLayer.clearLayers();
+      if (!Array.isArray(items)) return;
 
-    // Auto-fit & ensure map bounds render smoothly
+      items.forEach(cap => {
+        const capLat = parseFloat(cap.latitude);
+        const capLng = parseFloat(cap.longitude);
+        if (isNaN(capLat) || isNaN(capLng)) return;
+
+        const fillColor = cap.shapeStyle?.fillColor || '#ff9c5c';
+        const strokeColor = cap.shapeStyle?.strokeColor || '#ffffff';
+
+        const capHtml = 
+          '<div class="camera-pin-wrapper">' +
+            '<div class="camera-pin-ring" style="border-color: ' + fillColor + '"></div>' +
+            '<div class="camera-pin-head" style="background: ' + fillColor + '; border-color: ' + strokeColor + ';">' +
+              '<span class="camera-pin-icon">📷</span>' +
+            '</div>' +
+          '</div>';
+
+        const capIcon = L.divIcon({
+          className: 'camera-pin-container',
+          html: capHtml,
+          iconSize: [44, 44],
+          iconAnchor: [22, 40],
+          popupAnchor: [0, -40]
+        });
+
+        const capMarker = L.marker([capLat, capLng], { icon: capIcon, zIndexOffset: 5000 }).addTo(capturesLayer);
+
+        capMarker.on('click', () => {
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'CAPTURE_SELECTED',
+              captureId: cap.id,
+              capture: cap
+            }));
+          }
+        });
+      });
+    };
+
+    window.renderCaptures(captures);
+
+    // Message Listener for React Native postMessage
+    function handleMsg(event) {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (data.type === 'UPDATE_USER_LOCATION') {
+          window.renderUserLocation(data);
+        } else if (data.type === 'UPDATE_CAPTURES') {
+          window.renderCaptures(data.captures);
+        } else if (data.type === 'FLY_TO' && data.lat && data.lng) {
+          map.flyTo([data.lat, data.lng], data.zoom || 18, { animate: true, duration: 1.2 });
+        }
+      } catch (e) {}
+    }
+
+    window.addEventListener('message', handleMsg);
+    document.addEventListener('message', handleMsg);
+
     setTimeout(() => {
       map.invalidateSize();
-      map.setView([lat, lng], 16, { animate: true });
     }, 200);
   </script>
 </body>
 </html>
-    `;
-  }, [project, lat, lng]);
+      `;
+    }, [lat, lng, captures]);
 
-  return (
-    <View style={[styles.container, style]}>
-      <WebView
-        ref={webViewRef}
-        originWhitelist={['*']}
-        source={{ html: htmlContent }}
-        style={styles.webview}
-        javaScriptEnabled
-        domStorageEnabled
-        startInLoadingState
-        renderLoading={() => (
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color={Colors.secondary} />
-          </View>
-        )}
-      />
-    </View>
-  );
-};
+    const handleMessage = (event: any) => {
+      try {
+        const data = JSON.parse(event.nativeEvent.data);
+        if (data.type === 'CAPTURE_SELECTED' && onSelectCapture) {
+          const found = captures.find((c) => c.id === data.captureId) || data.capture;
+          if (found) {
+            onSelectCapture(found);
+          }
+        }
+      } catch (e) {
+        console.error('Error handling map webview message:', e);
+      }
+    };
+
+    return (
+      <View style={[styles.container, style]}>
+        <WebView
+          ref={webViewRef}
+          originWhitelist={['*']}
+          source={{ html: htmlContent }}
+          style={styles.webview}
+          onMessage={handleMessage}
+          javaScriptEnabled
+          domStorageEnabled
+          startInLoadingState
+          renderLoading={() => (
+            <View style={styles.loader}>
+              <ActivityIndicator size="large" color={Colors.secondary} />
+            </View>
+          )}
+        />
+      </View>
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   container: {

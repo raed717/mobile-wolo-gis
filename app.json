@@ -7,7 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "SMARTOWN requires camera access to capture field inspection photos.",
+        "NSLocationWhenInUseUsageDescription": "SMARTOWN requires your GPS location to geo-tag field survey photos and display your position on GIS maps."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -15,14 +19,32 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SMARTOWN needs access to your location to geo-tag field survey photos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SMARTOWN needs access to your photos to attach field inspection images.",
+          "cameraPermission": "SMARTOWN needs access to your camera to capture field survey photos."
+        }
+      ]
     ]
   }
 }
