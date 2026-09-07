@@ -29,7 +29,7 @@ export const StarryBackground: React.FC<{ children: React.ReactNode }> = ({ chil
     <View style={styles.container}>
       <LinearGradient
         colors={[Colors.bgGradientStart, Colors.bgDark, Colors.bgGradientEnd]}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
@@ -37,12 +37,12 @@ export const StarryBackground: React.FC<{ children: React.ReactNode }> = ({ chil
       {/* Map Wallpaper Subtle Texture */}
       <ImageBackground
         source={AppAssets.mapWallpaper}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
         imageStyle={{ opacity: 0.18, resizeMode: 'cover' }}
       />
 
       {/* Star Particles */}
-      <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {stars.map((star) => (
           <View
             key={star.id}

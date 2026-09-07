@@ -12,6 +12,7 @@ import { Colors } from '../../theme/colors';
 import { CustomInput } from '../../components/common/CustomInput';
 import { CustomButton } from '../../components/common/CustomButton';
 import { useAuth } from '../../context/AuthContext';
+import { DEV_MACHINE_IP, DEV_MACHINE_PORT } from '../../config/constants';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -72,16 +73,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
           <View style={styles.presetButtons}>
             <TouchableOpacity
               style={styles.presetChip}
-              onPress={() => handlePreset('http://localhost:3000')}
+              onPress={() => handlePreset(`http://${DEV_MACHINE_IP}:${DEV_MACHINE_PORT}`)}
             >
-              <Text style={styles.presetText}>localhost:3000 (iOS/Web)</Text>
+              <Text style={styles.presetText}>📱 {DEV_MACHINE_IP}:{DEV_MACHINE_PORT} (LAN / iPhone)</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.presetChip}
               onPress={() => handlePreset('http://10.0.2.2:3000')}
             >
-              <Text style={styles.presetText}>10.0.2.2:3000 (Android Emu)</Text>
+              <Text style={styles.presetText}>🤖 10.0.2.2:3000 (Android Emu)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.presetChip}
+              onPress={() => handlePreset('http://localhost:3000')}
+            >
+              <Text style={styles.presetText}>💻 localhost:3000 (iOS Sim)</Text>
             </TouchableOpacity>
           </View>
 

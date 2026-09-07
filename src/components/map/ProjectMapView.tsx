@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0c0d13',
   },
   loader: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#0c0d13',
     justifyContent: 'center',
     alignItems: 'center',
