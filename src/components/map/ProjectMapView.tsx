@@ -6,9 +6,12 @@ import { SurveyCaptureItem, UserLocation } from '../../types/survey.types';
 import { GeoJsonFeature, ShapeStyleDefinition } from '../../types/shapeInstance.types';
 import { Colors } from '../../theme/colors';
 
+export type BasemapType = 'streets' | 'satellite' | 'dark';
+
 export interface ProjectMapViewRef {
   flyToLocation: (lat: number, lng: number, zoom?: number) => void;
   fitBoundsToShapes: () => void;
+  switchBasemap: (type: BasemapType) => void;
 }
 
 interface ProjectMapViewProps {
@@ -64,6 +67,17 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           const js = `
             if (window.fitShapesBounds) {
               window.fitShapesBounds();
+            }
+            true;
+          `;
+          webViewRef.current.injectJavaScript(js);
+        }
+      },
+      switchBasemap: (type: BasemapType) => {
+        if (webViewRef.current) {
+          const js = `
+            if (window.switchBasemap) {
+              window.switchBasemap('${type}');
             }
             true;
           `;
@@ -286,17 +300,29 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       center: initialCenter,
       zoom: initialZoom,
       layers: [streets],
-      zoomControl: true,
+      zoomControl: false,
       preferCanvas: true
     });
     window.map = map;
 
-    const baseMaps = {
-      "Streets": streets,
-      "Satellite": satellite,
-      "Dark GIS": dark
+    // Position Zoom Controls neatly at bottom-left
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+    const baseLayers = {
+      streets: streets,
+      satellite: satellite,
+      dark: dark
     };
-    L.control.layers(baseMaps, null, { position: 'topright' }).addTo(map);
+    let currentBasemap = 'streets';
+
+    window.switchBasemap = function(type) {
+      if (baseLayers[type] && currentBasemap !== type) {
+        map.removeLayer(baseLayers[currentBasemap]);
+        map.addLayer(baseLayers[type]);
+        baseLayers[type].bringToBack();
+        currentBasemap = type;
+      }
+    };
 
     // High-performance HTML5 Canvas Vector Renderer
     const canvasRenderer = L.canvas({ padding: 0.5, tolerance: 10 });
@@ -637,6 +663,8 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           window.updateShapesData(data.shapes, data.styles, data.visible);
         } else if (data.type === 'FIT_SHAPES_BOUNDS') {
           window.fitShapesBounds();
+        } else if (data.type === 'SWITCH_BASEMAP' && data.basemap) {
+          window.switchBasemap(data.basemap);
         } else if (data.type === 'FLY_TO' && data.lat && data.lng) {
           map.flyTo([data.lat, data.lng], data.zoom || 18, { animate: true, duration: 1.2 });
         }

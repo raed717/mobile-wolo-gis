@@ -47,3 +47,10 @@ export interface ShapeStats {
   imported: number;
   native: number;
 }
+
+export interface ObjNameFilterItem {
+  name: string;
+  geometryType: 'POLYGON' | 'LINE' | 'POINT';
+  count: number;
+  color?: string;
+}

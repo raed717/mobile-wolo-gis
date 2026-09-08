@@ -17,10 +17,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { Project } from '../../types/project.types';
 import { SurveyCaptureItem, UserLocation } from '../../types/survey.types';
 import { Colors } from '../../theme/colors';
-import { ProjectMapView, ProjectMapViewRef } from '../../components/map/ProjectMapView';
+import { ProjectMapView, ProjectMapViewRef, BasemapType } from '../../components/map/ProjectMapView';
 import { SurveyCaptureModal } from '../../components/survey/SurveyCaptureModal';
 import { SurveyPointDetailModal } from '../../components/survey/SurveyPointDetailModal';
 import { ShapeInstanceDetailModal } from '../../components/shape/ShapeInstanceDetailModal';
+import { DraggableMapSettingsButton } from '../../components/map/DraggableMapSettingsButton';
+import { MapSettingsModal } from '../../components/map/MapSettingsModal';
 import { useDeviceLocation } from '../../hooks/useDeviceLocation';
 import { useSurveyCaptures } from '../../hooks/useSurveyCaptures';
 import { useProjectShapeInstances } from '../../hooks/useProjectShapeInstances';
@@ -61,6 +63,12 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
     setShowNative,
     stylesMap,
     refresh: refreshShapes,
+    objNamesByCategory,
+    selectedObjNames,
+    toggleObjName,
+    selectAllObjNames,
+    deselectObjNames,
+    hasObjNameFilter,
   } = useProjectShapeInstances(project?.id, visible);
 
   // Modals & UI state
@@ -70,9 +78,25 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
   const [selectedCapture, setSelectedCapture] = useState<SurveyCaptureItem | null>(null);
   const [selectedShapeFeature, setSelectedShapeFeature] = useState<GeoJsonFeature | null>(null);
   const [showShapesLayer, setShowShapesLayer] = useState<boolean>(true);
-  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState<boolean>(false);
+  const [isMapSettingsOpen, setIsMapSettingsOpen] = useState<boolean>(false);
+  const [currentBasemap, setCurrentBasemap] = useState<BasemapType>('streets');
   const [isCapturesListOpen, setIsCapturesListOpen] = useState<boolean>(false);
   const [isCameraLaunching, setIsCameraLaunching] = useState<boolean>(false);
+
+  const handleSelectBasemap = (type: BasemapType) => {
+    setCurrentBasemap(type);
+    if (mapRef.current) {
+      mapRef.current.switchBasemap(type);
+    }
+  };
+
+  const handleRecenterProject = () => {
+    if (mapRef.current && project) {
+      const pLat = project.lat || 36.8065;
+      const pLng = project.lng || 10.1815;
+      mapRef.current.flyToLocation(pLat, pLng, 16);
+    }
+  };
 
   if (!visible || !project) return null;
 
@@ -220,171 +244,20 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
               onSelectShape={setSelectedShapeFeature}
             />
 
-            {/* Top Floating GIS Shapes HUD */}
-            <View style={styles.topHudContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.shapesHudPill,
-                  !showShapesLayer && styles.shapesHudPillDisabled,
-                ]}
-                onPress={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
-                activeOpacity={0.85}
-              >
-                <Ionicons
-                  name={showShapesLayer ? 'layers' : 'layers-outline'}
-                  size={16}
-                  color={showShapesLayer ? Colors.secondary : Colors.textMuted}
-                />
-                <Text style={styles.shapesHudCount}>
-                  {isShapesLoading ? 'Loading...' : `${shapeFeatures.length} Shapes`}
-                </Text>
-                {filterCategory !== 'ALL' && (
-                  <View style={styles.categoryBadge}>
-                    <Text style={styles.categoryBadgeText}>{filterCategory}</Text>
-                  </View>
-                )}
-                {isShapesLoading ? (
-                  <ActivityIndicator size="small" color={Colors.secondary} style={{ marginLeft: 2 }} />
-                ) : (
-                  <Ionicons
-                    name={isFilterMenuOpen ? 'chevron-up' : 'chevron-down'}
-                    size={14}
-                    color={Colors.textMuted}
-                  />
-                )}
-              </TouchableOpacity>
-
-              {/* Fit All Shapes into Viewport Button */}
-              {shapeFeatures.length > 0 && (
-                <TouchableOpacity
-                  style={styles.fitBoundsBtn}
-                  onPress={() => {
-                    if (mapRef.current) {
-                      mapRef.current.fitBoundsToShapes();
-                    }
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="scan-outline" size={16} color={Colors.white} />
-                  <Text style={styles.fitBoundsText}>Fit All</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Shapes Filter & Origin Dropdown Panel */}
-            {isFilterMenuOpen && (
-              <View style={styles.filterMenuPanel}>
-                <View style={styles.filterMenuHeader}>
-                  <Text style={styles.filterMenuTitle}>GIS Vector Layers</Text>
-                  <TouchableOpacity
-                    onPress={() => setShowShapesLayer(!showShapesLayer)}
-                    style={[
-                      styles.toggleLayerBtn,
-                      showShapesLayer ? styles.toggleLayerBtnActive : styles.toggleLayerBtnInactive,
-                    ]}
-                  >
-                    <Ionicons
-                      name={showShapesLayer ? 'eye' : 'eye-off'}
-                      size={14}
-                      color={showShapesLayer ? Colors.secondary : Colors.textMuted}
-                    />
-                    <Text
-                      style={[
-                        styles.toggleLayerText,
-                        { color: showShapesLayer ? Colors.secondary : Colors.textMuted },
-                      ]}
-                    >
-                      {showShapesLayer ? 'Layer Visible' : 'Hidden'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Geometry Filter Chips */}
-                <Text style={styles.filterGroupLabel}>Filter by Geometry Type:</Text>
-                <View style={styles.filterChipsRow}>
-                  {(['ALL', 'POLYGON', 'LINE', 'POINT'] as const).map((cat) => {
-                    const count =
-                      cat === 'ALL'
-                        ? shapeStats.total
-                        : cat === 'POLYGON'
-                        ? shapeStats.polygons
-                        : cat === 'LINE'
-                        ? shapeStats.lines
-                        : shapeStats.points;
-
-                    const isActive = filterCategory === cat;
-
-                    return (
-                      <TouchableOpacity
-                        key={cat}
-                        style={[
-                          styles.filterChip,
-                          isActive && styles.filterChipActive,
-                        ]}
-                        onPress={() => setFilterCategory(cat)}
-                      >
-                        <Text
-                          style={[
-                            styles.filterChipText,
-                            isActive && styles.filterChipTextActive,
-                          ]}
-                        >
-                          {cat === 'ALL' ? 'All' : cat} ({count})
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Origin Source Filter */}
-                <Text style={styles.filterGroupLabel}>Shape Origin Source:</Text>
-                <View style={styles.originRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.originChip,
-                      showNative && styles.originChipActive,
-                    ]}
-                    onPress={() => setShowNative(!showNative)}
-                  >
-                    <Ionicons
-                      name={showNative ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={14}
-                      color={showNative ? '#38bdf8' : Colors.textMuted}
-                    />
-                    <Text
-                      style={[
-                        styles.originText,
-                        showNative && { color: '#38bdf8', fontWeight: '700' },
-                      ]}
-                    >
-                      Native Web ({shapeStats.native})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.originChip,
-                      showImported && styles.originChipActive,
-                    ]}
-                    onPress={() => setShowImported(!showImported)}
-                  >
-                    <Ionicons
-                      name={showImported ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={14}
-                      color={showImported ? '#c084fc' : Colors.textMuted}
-                    />
-                    <Text
-                      style={[
-                        styles.originText,
-                        showImported && { color: '#c084fc', fontWeight: '700' },
-                      ]}
-                    >
-                      Imported ({shapeStats.imported})
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            {/* Floating Draggable Map Settings & GIS Controls Button */}
+            <DraggableMapSettingsButton
+              onPress={() => setIsMapSettingsOpen(true)}
+              shapesCount={shapeFeatures.length}
+              hasActiveFilters={
+                filterCategory !== 'ALL' ||
+                !showNative ||
+                !showImported ||
+                !showShapesLayer ||
+                hasObjNameFilter ||
+                currentBasemap !== 'streets'
+              }
+              isLoading={isShapesLoading}
+            />
 
             {/* Floating Action Buttons */}
             <View style={styles.fabContainer}>
@@ -508,6 +381,36 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
             visible={!!selectedShapeFeature}
             feature={selectedShapeFeature}
             onClose={() => setSelectedShapeFeature(null)}
+          />
+
+          {/* Draggable Unified Map Settings & GIS Controls Modal */}
+          <MapSettingsModal
+            visible={isMapSettingsOpen}
+            onClose={() => setIsMapSettingsOpen(false)}
+            currentBasemap={currentBasemap}
+            onSelectBasemap={handleSelectBasemap}
+            showShapesLayer={showShapesLayer}
+            onToggleShapesLayer={setShowShapesLayer}
+            filterCategory={filterCategory}
+            onSelectCategory={setFilterCategory}
+            showNative={showNative}
+            onToggleNative={setShowNative}
+            showImported={showImported}
+            onToggleImported={setShowImported}
+            shapeStats={shapeStats}
+            objNamesList={objNamesByCategory[filterCategory] || []}
+            selectedObjNames={selectedObjNames}
+            onToggleObjName={toggleObjName}
+            onSelectAllObjNames={selectAllObjNames}
+            onDeselectObjNames={deselectObjNames}
+            hasObjNameFilter={hasObjNameFilter}
+            onFitAllShapes={() => {
+              if (mapRef.current) {
+                mapRef.current.fitBoundsToShapes();
+              }
+            }}
+            onRecenterProject={handleRecenterProject}
+            onLocateMe={handleLocateMe}
           />
         </SafeAreaView>
       </View>
@@ -699,186 +602,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.secondary,
     marginTop: 2,
-  },
-  topHudContainer: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
-    right: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 998,
-    pointerEvents: 'box-none',
-  },
-  shapesHudPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#16192e',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 156, 92, 0.4)',
-    gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  shapesHudPillDisabled: {
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    opacity: 0.75,
-  },
-  shapesHudCount: {
-    color: Colors.white,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  categoryBadge: {
-    backgroundColor: 'rgba(255, 156, 92, 0.18)',
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 6,
-  },
-  categoryBadgeText: {
-    color: Colors.secondary,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  fitBoundsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#16192e',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    gap: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  fitBoundsText: {
-    color: Colors.white,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  filterMenuPanel: {
-    position: 'absolute',
-    top: 58,
-    left: 14,
-    right: 14,
-    backgroundColor: '#16192e',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    padding: 14,
-    zIndex: 999,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 14,
-    elevation: 10,
-  },
-  filterMenuHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-    paddingBottom: 8,
-  },
-  filterMenuTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.white,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  toggleLayerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  toggleLayerBtnActive: {
-    backgroundColor: 'rgba(255, 156, 92, 0.15)',
-    borderColor: Colors.secondary,
-  },
-  toggleLayerBtnInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  toggleLayerText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  filterGroupLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.textMuted,
-    marginBottom: 6,
-    marginTop: 2,
-  },
-  filterChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
-  },
-  filterChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  filterChipActive: {
-    backgroundColor: 'rgba(255, 156, 92, 0.2)',
-    borderColor: Colors.secondary,
-  },
-  filterChipText: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
-  filterChipTextActive: {
-    color: Colors.secondary,
-    fontWeight: '700',
-  },
-  originRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  originChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    flex: 1,
-  },
-  originChipActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  originText: {
-    fontSize: 11,
-    color: Colors.textMuted,
-    fontWeight: '500',
   },
 });
