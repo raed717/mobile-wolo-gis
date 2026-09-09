@@ -17,6 +17,7 @@ import { CustomButton } from '../common/CustomButton';
 import { useShapes } from '../../hooks/useShapes';
 import { Shape } from '../../types/shape.types';
 import { SurveyCaptureItem, UserLocation } from '../../types/survey.types';
+import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
 
 const DEFAULT_FALLBACK_SHAPE: Shape = {
   id: 0,
@@ -217,26 +218,30 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
               </ScrollView>
             )}
 
-            {/* Dynamic Attribute Fields */}
-            {selectedShape && selectedShape.attributes && selectedShape.attributes.length > 0 && (
-              <View style={styles.attributesSection}>
-                <Text style={styles.sectionLabel}>
-                  {selectedShape.name} Attributes ({selectedShape.attributes.length})
-                </Text>
-                {selectedShape.attributes.map((attr) => (
-                  <View key={attr.id} style={styles.attributeField}>
-                    <Text style={styles.attrLabel}>{attr.name}</Text>
-                    <TextInput
-                      style={styles.attrInput}
-                      value={attributeValues[attr.name] || ''}
-                      onChangeText={(val) => handleAttributeChange(attr.name, val)}
-                      placeholder={attr.defaultValue || `Enter ${attr.name}`}
-                      placeholderTextColor={Colors.textPlaceholder}
-                    />
-                  </View>
-                ))}
-              </View>
-            )}
+            {/* Dynamic Attribute Fields (excluding styling metadata) */}
+            {(() => {
+              const visibleAttrs = filterVisibleShapeAttributes(selectedShape?.attributes || []);
+              if (!selectedShape || visibleAttrs.length === 0) return null;
+              return (
+                <View style={styles.attributesSection}>
+                  <Text style={styles.sectionLabel}>
+                    {selectedShape.name} Attributes ({visibleAttrs.length})
+                  </Text>
+                  {visibleAttrs.map((attr) => (
+                    <View key={attr.id} style={styles.attributeField}>
+                      <Text style={styles.attrLabel}>{attr.name}</Text>
+                      <TextInput
+                        style={styles.attrInput}
+                        value={attributeValues[attr.name] || ''}
+                        onChangeText={(val) => handleAttributeChange(attr.name, val)}
+                        placeholder={attr.defaultValue || `Enter ${attr.name}`}
+                        placeholderTextColor={Colors.textPlaceholder}
+                      />
+                    </View>
+                  ))}
+                </View>
+              );
+            })()}
 
             {/* Optional Field Notes */}
             <View style={styles.notesSection}>

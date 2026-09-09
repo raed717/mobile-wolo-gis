@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Project, ProjectFilterType } from '../types/project.types';
 import { projectService } from '../services/api/projectService';
 import { useAuth } from '../context/AuthContext';
+import { useRecentProjects } from './useRecentProjects';
 
 export function useProjects() {
   const { user } = useAuth();
@@ -15,6 +16,16 @@ export function useProjects() {
 
   const isAdmin = user?.role === 'Admin';
   const userOrgId = user?.organizationId;
+
+  // Cache Memory: Recently viewed projects hook
+  const {
+    recentProjects,
+    recentCount,
+    markAsViewed,
+    clearRecent,
+    isRecent,
+    getRecentViewedAt,
+  } = useRecentProjects(projects);
 
   const fetchProjects = useCallback(
     async (isRefresh = false) => {
@@ -59,7 +70,7 @@ export function useProjects() {
   }, [fetchProjects]);
 
   const filteredProjects = useMemo(() => {
-    return projects.filter((project) => {
+    const list = projects.filter((project) => {
       // 1. Search text filter
       const query = searchQuery.trim().toLowerCase();
       const matchesSearch =
@@ -72,6 +83,9 @@ export function useProjects() {
       if (!matchesSearch) return false;
 
       // 2. Tab filter
+      if (activeFilter === 'recent') {
+        return isRecent(project.id);
+      }
       if (activeFilter === 'organization' && userOrgId) {
         return project.organizationId === userOrgId;
       }
@@ -84,10 +98,24 @@ export function useProjects() {
 
       return true;
     });
-  }, [projects, searchQuery, activeFilter, userOrgId]);
+
+    // If viewing recent tab, strictly sort by last viewed time descending
+    if (activeFilter === 'recent') {
+      return list.sort((a, b) => {
+        const timeA = getRecentViewedAt(a.id) || 0;
+        const timeB = getRecentViewedAt(b.id) || 0;
+        return timeB - timeA;
+      });
+    }
+
+    return list;
+  }, [projects, searchQuery, activeFilter, userOrgId, isRecent, getRecentViewedAt]);
 
   return {
     projects: filteredProjects,
+    rawProjects: projects,
+    recentProjects,
+    recentCount,
     allProjectsCount: projects.length,
     isLoading,
     isRefreshing,
@@ -98,6 +126,10 @@ export function useProjects() {
     setSearchQuery,
     activeFilter,
     setActiveFilter,
+    markAsViewed,
+    clearRecent,
+    isRecent,
+    getRecentViewedAt,
     refresh: () => fetchProjects(true),
     retry: () => fetchProjects(false),
   };

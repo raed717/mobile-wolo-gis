@@ -93,7 +93,7 @@ export const ShapesScreen: React.FC<ShapesScreenProps> = ({ onBack }) => {
 
           <View style={styles.navTitleContainer}>
             <Text style={styles.navTitle}>Shapes Management</Text>
-            <Text style={styles.navSub}>GIS Geometry & Styles</Text>
+            <Text style={styles.navSub}>GIS Geometry & Attributes</Text>
           </View>
 
           <View style={{ width: 36 }} />

@@ -3,17 +3,22 @@ import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { Project } from '../../types/project.types';
+import { formatRelativeTime } from '../../hooks/useRecentProjects';
 
 interface ProjectCardProps {
   project: Project;
   onPress: (project: Project) => void;
   onViewOnMap?: (project: Project) => void;
+  isRecent?: boolean;
+  recentViewedAt?: number | null;
 }
 
 export const ProjectCard: React.FC<ProjectCardProps> = ({
   project,
   onPress,
   onViewOnMap,
+  isRecent = false,
+  recentViewedAt,
 }) => {
   const hasCoordinates =
     typeof project.lat === 'number' &&
@@ -31,11 +36,11 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, isRecent && styles.recentCard]}
       onPress={() => onPress(project)}
       activeOpacity={0.85}
     >
-      {/* Top row: Name & Privacy Badge */}
+      {/* Top row: Name & Badges */}
       <View style={styles.headerRow}>
         <View style={styles.titleContainer}>
           <Text style={styles.projectName} numberOfLines={1}>
@@ -51,25 +56,36 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           ) : null}
         </View>
 
-        <View
-          style={[
-            styles.badge,
-            project.isPrivate ? styles.privateBadge : styles.publicBadge,
-          ]}
-        >
-          <Ionicons
-            name={project.isPrivate ? 'lock-closed' : 'globe-outline'}
-            size={11}
-            color={project.isPrivate ? Colors.secondary : Colors.success}
-          />
-          <Text
+        <View style={styles.badgeGroup}>
+          {isRecent && (
+            <View style={styles.recentBadge}>
+              <Ionicons name="time" size={10} color="#ff9c5c" />
+              <Text style={styles.recentBadgeText}>
+                {recentViewedAt ? formatRelativeTime(recentViewedAt) : 'Recent'}
+              </Text>
+            </View>
+          )}
+
+          <View
             style={[
-              styles.badgeText,
-              { color: project.isPrivate ? Colors.secondary : Colors.success },
+              styles.badge,
+              project.isPrivate ? styles.privateBadge : styles.publicBadge,
             ]}
           >
-            {project.isPrivate ? 'Private' : 'Public'}
-          </Text>
+            <Ionicons
+              name={project.isPrivate ? 'lock-closed' : 'globe-outline'}
+              size={11}
+              color={project.isPrivate ? Colors.secondary : Colors.success}
+            />
+            <Text
+              style={[
+                styles.badgeText,
+                { color: project.isPrivate ? Colors.secondary : Colors.success },
+              ]}
+            >
+              {project.isPrivate ? 'Private' : 'Public'}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -166,6 +182,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  recentCard: {
+    borderColor: 'rgba(255, 156, 92, 0.4)',
+    backgroundColor: '#171c35',
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -191,6 +211,27 @@ const styles = StyleSheet.create({
   locationText: {
     fontSize: 12,
     color: Colors.textSecondary,
+  },
+  badgeGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  recentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 156, 92, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 156, 92, 0.3)',
+  },
+  recentBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#ff9c5c',
   },
   badge: {
     flexDirection: 'row',

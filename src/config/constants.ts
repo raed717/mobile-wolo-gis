@@ -18,6 +18,7 @@ export const STORAGE_KEYS = {
   AUTH_TOKEN: 'smartown_auth_token',
   USER_DATA: 'smartown_user_data',
   API_URL: 'smartown_api_url',
+  RECENT_PROJECTS: 'smartown_recent_projects',
 };
 
 export const APP_CONFIG = {

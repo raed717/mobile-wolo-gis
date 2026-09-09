@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { GeoJsonFeature } from '../../types/shapeInstance.types';
+import { filterVisibleFeatureProperties } from '../../utils/shapeAttributeUtils';
 
 interface ShapeInstanceDetailModalProps {
   visible: boolean;
@@ -36,22 +37,8 @@ export const ShapeInstanceDetailModal: React.FC<ShapeInstanceDetailModalProps> =
   const isImported = !!feature.isImported;
   const objName = properties['Obj Name'] || properties['name'] || `Feature #${feature.id}`;
 
-  // Filter out internal/noisy keys
-  const hiddenKeys = new Set([
-    'id',
-    'projectId',
-    'createdAt',
-    'createdBy',
-    'isImported',
-    'markShape',
-    'markerSize',
-    'Obj Name',
-    'name',
-  ]);
-
-  const displayProperties = Object.entries(properties).filter(
-    ([key]) => !hiddenKeys.has(key)
-  );
+  // Filter out styling and internal properties
+  const displayProperties = filterVisibleFeatureProperties(properties);
 
   const getGeometryIcon = () => {
     const t = geomType.toUpperCase();

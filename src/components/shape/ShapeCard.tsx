@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { Shape } from '../../types/shape.types';
+import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
 
 interface ShapeCardProps {
   shape: Shape;
@@ -35,7 +36,7 @@ export const ShapeCard: React.FC<ShapeCardProps> = ({
     return Colors.secondary;
   };
 
-  const attributesCount = shape.attributes?.length || 0;
+  const attributesCount = filterVisibleShapeAttributes(shape.attributes || []).length;
 
   return (
     <TouchableOpacity

@@ -16,6 +16,7 @@ import { useProjects } from '../../hooks/useProjects';
 import { ProjectCard } from '../../components/project/ProjectCard';
 import { ProjectSearchBar } from '../../components/project/ProjectSearchBar';
 import { ProjectFilterChips } from '../../components/project/ProjectFilterChips';
+import { RecentlyViewedProjects } from '../../components/project/RecentlyViewedProjects';
 import { ProjectDetailModal } from '../../components/project/ProjectDetailModal';
 import { ProjectMapModal } from '../map/ProjectMapModal';
 import { EmptyState } from '../../components/common/EmptyState';
@@ -28,6 +29,8 @@ interface ProjectsScreenProps {
 export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onBack }) => {
   const {
     projects,
+    recentProjects,
+    recentCount,
     allProjectsCount,
     isLoading,
     isRefreshing,
@@ -38,6 +41,10 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onBack }) => {
     setSearchQuery,
     activeFilter,
     setActiveFilter,
+    markAsViewed,
+    clearRecent,
+    isRecent,
+    getRecentViewedAt,
     refresh,
     retry,
   } = useProjects();
@@ -45,7 +52,13 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onBack }) => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [mapProject, setMapProject] = useState<Project | null>(null);
 
+  const handleSelectProject = (project: Project) => {
+    markAsViewed(project.id);
+    setSelectedProject(project);
+  };
+
   const handleOpenMap = (project: Project) => {
+    markAsViewed(project.id);
     setMapProject(project);
   };
 
@@ -62,21 +75,38 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onBack }) => {
         activeFilter={activeFilter}
         onSelectFilter={setActiveFilter}
         totalCount={allProjectsCount}
+        recentCount={recentCount}
         isAdmin={isAdmin}
       />
+
+      {/* Recently Viewed Projects on Top of the List (from Cache Memory) */}
+      {!searchQuery && recentProjects.length > 0 && activeFilter !== 'recent' && (
+        <RecentlyViewedProjects
+          recentProjects={recentProjects}
+          onSelectProject={handleSelectProject}
+          onViewOnMap={handleOpenMap}
+          onClear={clearRecent}
+        />
+      )}
 
       {/* Section Title & Subtitle */}
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
           <Text style={styles.sectionTitle}>
-            {isAdmin ? 'All System Projects' : 'Organization Projects'}
+            {activeFilter === 'recent'
+              ? 'Recently Viewed'
+              : isAdmin
+              ? 'All System Projects'
+              : 'Organization Projects'}
           </Text>
           <View style={styles.countBadge}>
             <Text style={styles.countBadgeText}>{projects.length}</Text>
           </View>
         </View>
         <Text style={styles.sectionSubtitle}>
-          {isAdmin
+          {activeFilter === 'recent'
+            ? 'Projects you recently viewed (stored in cache memory)'
+            : isAdmin
             ? 'Administrator Access • Viewing projects across all organizations'
             : userOrgId
             ? `Viewing projects for Organization #${userOrgId}`
@@ -130,24 +160,52 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onBack }) => {
             renderItem={({ item }) => (
               <ProjectCard
                 project={item}
-                onPress={setSelectedProject}
+                onPress={handleSelectProject}
                 onViewOnMap={(p) => handleOpenMap(p)}
+                isRecent={isRecent(item.id)}
+                recentViewedAt={getRecentViewedAt(item.id)}
               />
             )}
             ListHeaderComponent={renderHeader}
             ListEmptyComponent={
               <EmptyState
-                iconName={searchQuery ? 'search-outline' : 'folder-open-outline'}
-                title={searchQuery ? 'No Projects Found' : 'No Projects Available'}
+                iconName={
+                  searchQuery
+                    ? 'search-outline'
+                    : activeFilter === 'recent'
+                    ? 'time-outline'
+                    : 'folder-open-outline'
+                }
+                title={
+                  searchQuery
+                    ? 'No Projects Found'
+                    : activeFilter === 'recent'
+                    ? 'No Recently Viewed Projects'
+                    : 'No Projects Available'
+                }
                 description={
                   searchQuery
                     ? `No projects match "${searchQuery}". Try a different keyword or reset filters.`
+                    : activeFilter === 'recent'
+                    ? 'You have not opened any projects recently. Tap on any project below to view its details or explore its map.'
                     : isAdmin
                     ? 'No projects exist on the server yet.'
                     : 'There are no projects assigned to your organization at this time.'
                 }
-                actionTitle={searchQuery ? 'Clear Search' : 'Refresh'}
-                onAction={searchQuery ? () => setSearchQuery('') : refresh}
+                actionTitle={
+                  searchQuery
+                    ? 'Clear Search'
+                    : activeFilter === 'recent'
+                    ? 'View All Projects'
+                    : 'Refresh'
+                }
+                onAction={
+                  searchQuery
+                    ? () => setSearchQuery('')
+                    : activeFilter === 'recent'
+                    ? () => setActiveFilter('all')
+                    : refresh
+                }
               />
             }
             contentContainerStyle={styles.listContent}
@@ -178,6 +236,7 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onBack }) => {
           onClose={() => setMapProject(null)}
           onOpenDetails={(p) => {
             setMapProject(null);
+            markAsViewed(p.id);
             setTimeout(() => setSelectedProject(p), 250);
           }}
         />

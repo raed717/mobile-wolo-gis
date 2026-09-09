@@ -20,4 +20,4 @@ export interface Project {
   updatedAt?: string;
 }
 
-export type ProjectFilterType = 'all' | 'organization' | 'public' | 'private';
+export type ProjectFilterType = 'all' | 'recent' | 'organization' | 'public' | 'private';

@@ -168,12 +168,12 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     }, [userLocation]);
 
     const htmlContent = useMemo(() => {
-      const initialCapturesJson = JSON.stringify(captures);
-      const initialLocationJson = JSON.stringify(userLocation);
-      const initialShapesJson = JSON.stringify(shapes);
-    const initialStylesJson = JSON.stringify(stylesMap || { byId: {}, byName: {} });
-    const orthoUrlsJson = JSON.stringify(project.orthophotoUrl || []);
-    const cleanBackendUrl = (backendUrl || '').replace(/\/+$/, '');
+      const initialCapturesJson = JSON.stringify(captures).replace(/<\/script/gi, '<\\/script');
+      const initialLocationJson = JSON.stringify(userLocation).replace(/<\/script/gi, '<\\/script');
+      const initialShapesJson = JSON.stringify(shapes).replace(/<\/script/gi, '<\\/script');
+      const initialStylesJson = JSON.stringify(stylesMap || { byId: {}, byName: {} }).replace(/<\/script/gi, '<\\/script');
+      const orthoUrlsJson = JSON.stringify(project.orthophotoUrl || []).replace(/<\/script/gi, '<\\/script');
+      const cleanBackendUrl = (backendUrl || '').replace(/\/+$/, '');
 
     return `
 <!DOCTYPE html>
@@ -223,6 +223,27 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     .leaflet-popup-tip {
       background: #16192e !important;
       border: 1px solid rgba(255,255,255,0.15) !important;
+    }
+
+    .popup-action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      padding: 6px 10px;
+      background: rgba(255, 156, 92, 0.15);
+      border: 1px solid rgba(255, 156, 92, 0.4);
+      border-radius: 6px;
+      color: #ff9c5c;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: background 0.2s;
+    }
+    .popup-action-btn:active {
+      background: rgba(255, 156, 92, 0.35);
     }
 
     /* Live GPS User Location Marker */
@@ -302,6 +323,17 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
   <div id="map"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
+    window.onerror = function(msg, url, line, col, error) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'WEBVIEW_ERROR',
+          message: String(msg),
+          line: line,
+          col: col
+        }));
+      }
+    };
+
     const lat = ${lat};
     const lng = ${lng};
     let captures = ${initialCapturesJson};
@@ -469,6 +501,42 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       };
     }
 
+    const activeFeaturesMap = {};
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    window.inspectFeature = function(key) {
+      const feat = activeFeaturesMap[key];
+      if (feat && window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'SHAPE_SELECTED',
+          feature: feat
+        }));
+      }
+    };
+
+    document.addEventListener('click', function(e) {
+      let target = e.target;
+      while (target && target !== document.body) {
+        if (target.classList && target.classList.contains('popup-action-btn')) {
+          const key = target.getAttribute('data-feature-key');
+          if (key && window.inspectFeature) {
+            window.inspectFeature(key);
+          }
+          break;
+        }
+        target = target.parentNode;
+      }
+    });
+
     function onShapeClicked(feature, layer, latlng) {
       if (selectedShapeLayer && selectedShapeLayer !== layer) {
         if (selectedShapeLayer.setStyle && selectedShapeLayer.feature) {
@@ -480,20 +548,24 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
         layer.setStyle(getFeatureStyle(feature, true));
       }
 
+      const featureKey = 'feat_' + (feature.id !== undefined ? String(feature.id) : (feature._id ? String(feature._id) : Math.random().toString(36).slice(2)));
+      activeFeaturesMap[featureKey] = feature;
+
       const props = feature.properties || {};
-      const name = props['Obj Name'] || props['name'] || ('Feature #' + feature.id);
+      const name = props['Obj Name'] || props['name'] || ('Feature #' + (feature.id !== undefined ? feature.id : ''));
       const geomType = feature.geometry ? feature.geometry.type : 'Geometry';
       const origin = feature.isImported ? 'Imported Shape' : 'Native Shape';
 
       const popupHtml = 
-        '<div style="font-family: sans-serif; font-size: 13px; color: #fff; padding: 4px;">' +
-          '<div style="font-weight: 700; color: #ff9c5c; margin-bottom: 3px; font-size: 14px;">' + name + '</div>' +
-          '<div style="font-size: 11px; color: #94a3b8; margin-bottom: 6px;">' +
-            '<span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">' + geomType + '</span> ' +
-            '<span style="background: rgba(56,189,248,0.15); color: #38bdf8; padding: 2px 6px; border-radius: 4px;">' + origin + '</span>' +
+        '<div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; color: #fff; padding: 4px; min-width: 170px;">' +
+          '<div style="font-weight: 700; color: #ff9c5c; margin-bottom: 4px; font-size: 14px;">' + escapeHtml(name) + '</div>' +
+          '<div style="font-size: 11px; color: #94a3b8; margin-bottom: 8px; display: flex; gap: 4px; flex-wrap: wrap;">' +
+            '<span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">' + escapeHtml(geomType) + '</span>' +
+            '<span style="background: rgba(56,189,248,0.15); color: #38bdf8; padding: 2px 6px; border-radius: 4px;">' + escapeHtml(origin) + '</span>' +
           '</div>' +
-          '<div style="font-size: 11px; color: #cbd5e1; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px; text-align: right;">' +
-            'Tap for full attributes &rarr;' +
+          '<div class="popup-action-btn" data-feature-key="' + featureKey + '">' +
+            '<span>Tap for full attributes</span>' +
+            '<span style="font-size: 13px; margin-left: 6px;">&rarr;</span>' +
           '</div>' +
         '</div>';
 
@@ -509,13 +581,6 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           .setLatLng(targetLatLng)
           .setContent(popupHtml)
           .openOn(map);
-      }
-
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'SHAPE_SELECTED',
-          feature: feature
-        }));
       }
     }
 
@@ -781,7 +846,9 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     const handleMessage = (event: any) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
-        if (data.type === 'CAPTURE_SELECTED' && onSelectCapture) {
+        if (data.type === 'WEBVIEW_ERROR') {
+          console.error('[ProjectMapView WebView Error]', data.message, 'line:', data.line, 'col:', data.col);
+        } else if (data.type === 'CAPTURE_SELECTED' && onSelectCapture) {
           const found = captures.find((c) => c.id === data.captureId) || data.capture;
           if (found) {
             onSelectCapture(found);
@@ -807,6 +874,12 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           javaScriptEnabled
           domStorageEnabled
           startInLoadingState
+          onError={(syntheticEvent) => {
+            console.error('ProjectMapView WebView load error: ', syntheticEvent.nativeEvent);
+          }}
+          onHttpError={(syntheticEvent) => {
+            console.error('ProjectMapView WebView HTTP error: ', syntheticEvent.nativeEvent);
+          }}
           renderLoading={() => (
             <View style={styles.loader}>
               <ActivityIndicator size="large" color={Colors.secondary} />

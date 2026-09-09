@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { Shape } from '../../types/shape.types';
+import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
 
 interface ShapeDetailModalProps {
   shape: Shape | null;
@@ -26,7 +27,7 @@ export const ShapeDetailModal: React.FC<ShapeDetailModalProps> = ({
   const insets = useSafeAreaInsets();
   if (!shape) return null;
 
-  const attributes = shape.attributes || [];
+  const visibleAttributes = filterVisibleShapeAttributes(shape.attributes || []);
   const formattedDate = shape.createdAt
     ? new Date(shape.createdAt).toLocaleDateString(undefined, {
         year: 'numeric',
@@ -85,17 +86,17 @@ export const ShapeDetailModal: React.FC<ShapeDetailModalProps> = ({
 
               <View style={styles.infoRow}>
                 <Text style={styles.label}>Total Attributes</Text>
-                <Text style={styles.value}>{attributes.length}</Text>
+                <Text style={styles.value}>{visibleAttributes.length}</Text>
               </View>
             </View>
 
             {/* Attributes List */}
             <Text style={styles.sectionTitle}>Configured Attributes</Text>
-            {attributes.length === 0 ? (
-              <Text style={styles.emptyAttributes}>No attributes defined for this shape.</Text>
+            {visibleAttributes.length === 0 ? (
+              <Text style={styles.emptyAttributes}>No business attributes defined for this shape.</Text>
             ) : (
               <View style={styles.attributesList}>
-                {attributes.map((attr, idx) => (
+                {visibleAttributes.map((attr, idx) => (
                   <View key={attr.id || idx} style={styles.attributeItem}>
                     <View style={styles.attrHeader}>
                       <Text style={styles.attrName}>{attr.name}</Text>

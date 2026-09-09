@@ -7,6 +7,7 @@ interface ProjectFilterChipsProps {
   activeFilter: ProjectFilterType;
   onSelectFilter: (filter: ProjectFilterType) => void;
   totalCount: number;
+  recentCount?: number;
   isAdmin?: boolean;
 }
 
@@ -14,17 +15,20 @@ export const ProjectFilterChips: React.FC<ProjectFilterChipsProps> = ({
   activeFilter,
   onSelectFilter,
   totalCount,
+  recentCount = 0,
   isAdmin = false,
 }) => {
-  const filters: { id: ProjectFilterType; label: string }[] = isAdmin
+  const baseFilters: { id: ProjectFilterType; label: string }[] = isAdmin
     ? [
         { id: 'all', label: 'All Projects' },
+        ...(recentCount > 0 ? [{ id: 'recent' as ProjectFilterType, label: 'Recent' }] : []),
         { id: 'organization', label: 'My Organization' },
         { id: 'public', label: 'Public' },
         { id: 'private', label: 'Private' },
       ]
     : [
         { id: 'all', label: 'All My Projects' },
+        ...(recentCount > 0 ? [{ id: 'recent' as ProjectFilterType, label: 'Recent' }] : []),
         { id: 'public', label: 'Public' },
         { id: 'private', label: 'Private' },
       ];
@@ -36,8 +40,10 @@ export const ProjectFilterChips: React.FC<ProjectFilterChipsProps> = ({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {filters.map((tab) => {
+        {baseFilters.map((tab) => {
           const isActive = activeFilter === tab.id;
+          const count = tab.id === 'all' ? totalCount : tab.id === 'recent' ? recentCount : null;
+
           return (
             <TouchableOpacity
               key={tab.id}
@@ -48,10 +54,10 @@ export const ProjectFilterChips: React.FC<ProjectFilterChipsProps> = ({
               <Text style={[styles.chipText, isActive && styles.activeChipText]}>
                 {tab.label}
               </Text>
-              {tab.id === 'all' && (
+              {count !== null && count > 0 && (
                 <View style={[styles.countBadge, isActive && styles.activeCountBadge]}>
                   <Text style={[styles.countText, isActive && styles.activeCountText]}>
-                    {totalCount}
+                    {count}
                   </Text>
                 </View>
               )}
