@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { Project } from '../../types/project.types';
@@ -25,6 +26,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   onClose,
   onViewOnMap,
 }) => {
+  const insets = useSafeAreaInsets();
   if (!project) return null;
 
   const hasCoords =
@@ -51,7 +53,12 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View
+          style={[
+            styles.sheet,
+            { paddingBottom: Math.max(20, insets.bottom + 10) },
+          ]}
+        >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleArea}>

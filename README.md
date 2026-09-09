@@ -12,6 +12,7 @@ A cross-platform mobile GIS, asset management, and field survey application for 
   - **Admin**: Full visibility into all system projects (`GET /project`).
   - **Standard User**: Filtered access restricted to the user's specific organization (`GET /project/organization/:id`).
 - **Main Menu Hub (`MenuScreen`)**: Post-login dashboard providing direct access to **Projects Management** and **Shapes Management**.
+- **Single-Session Enforcement & Multi-Device Auto-Logout**: Synchronized with the backend `currentJwtToken` session mechanism. If the user logs into their account from another device (web or mobile), the active device instantly catches the 401 session expiration, clears credentials, presents an alert (*"Your account was logged into from another device. You have been disconnected from this device."*), and routes back to the Login screen.
 - **Developer Server Selector**: Fast configuration modal on the login screen to switch between **Localhost**, **Android Emulator (`10.0.2.2:3000`)**, **LAN IP (`DEV_MACHINE_IP:3000`)** for physical iPhones/iPads, or remote servers.
 
 ### 2. 🗺️ Interactive GIS Map & Smart Rendering System

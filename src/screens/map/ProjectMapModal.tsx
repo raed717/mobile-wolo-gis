@@ -11,7 +11,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Project } from '../../types/project.types';
@@ -42,6 +42,7 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
   onClose,
   onOpenDetails,
 }) => {
+  const insets = useSafeAreaInsets();
   const mapRef = useRef<ProjectMapViewRef>(null);
 
   // Device GPS
@@ -268,7 +269,12 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
             />
 
             {/* Floating Action Buttons */}
-            <View style={styles.fabContainer}>
+            <View
+              style={[
+                styles.fabContainer,
+                { bottom: Math.max(20, insets.bottom + 12) },
+              ]}
+            >
               {/* Recenter / GPS Button -> Autozoom to exact location */}
               <TouchableOpacity
                 style={styles.gpsFab}
@@ -317,7 +323,12 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
 
           {/* Bottom Captures Drawer (When Open) */}
           {isCapturesListOpen && captures.length > 0 && (
-            <View style={styles.capturesDrawer}>
+            <View
+              style={[
+                styles.capturesDrawer,
+                { paddingBottom: Math.max(12, insets.bottom + 6) },
+              ]}
+            >
               <View style={styles.drawerTopRow}>
                 <Text style={styles.drawerHeaderTitle}>
                   Local Survey Captures ({captures.length})

@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { Alert, AppState, AppStateStatus } from 'react-native';
 import { jwtDecode } from 'jwt-decode';
 import { AuthContextType, LoginCredentials, User, DecodedToken } from '../types/auth.types';
 import { authService } from '../services/api/authService';
@@ -17,6 +18,73 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     bootstrapAuth();
   }, []);
+
+  // Dedicated handler for session expiration / multiple-device login
+  const handleSessionExpired = useCallback(async (customMessage?: string) => {
+    // Clear credentials locally immediately
+    apiService.setAuthToken(null);
+    await storageService.clearAll();
+    setToken(null);
+    setUser(null);
+
+    const title = 'Session Terminated';
+    const message =
+      customMessage?.includes('logged in elsewhere') || customMessage?.includes('Session expired')
+        ? 'Your account was logged into from another device. You have been disconnected from this device.'
+        : customMessage || 'Your session has expired. Please log in again.';
+
+    Alert.alert(title, message, [{ text: 'OK', style: 'default' }]);
+  }, []);
+
+  // Wire up apiClient's 401 unauthorized interceptor
+  useEffect(() => {
+    apiService.setOnUnauthorized((errorMessage) => {
+      handleSessionExpired(errorMessage);
+    });
+
+    return () => {
+      apiService.setOnUnauthorized(null);
+    };
+  }, [handleSessionExpired]);
+
+  // Check validity against backend (detects if user was logged in elsewhere)
+  const verifyCurrentSession = useCallback(async (activeToken?: string | null, activeUser?: User | null) => {
+    const t = activeToken || token;
+    const u = activeUser || user;
+    if (!t || !u?.id) return;
+
+    try {
+      await authService.getUserById(u.id, t);
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        // Handled automatically by onUnauthorized interceptor
+      }
+    }
+  }, [token, user]);
+
+  // Periodic and foreground verification of active session
+  useEffect(() => {
+    if (!token || !user?.id) return;
+
+    // 1. Check whenever the app comes back to the foreground
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        verifyCurrentSession();
+      }
+    });
+
+    // 2. Periodic background check every 30 seconds
+    const interval = setInterval(() => {
+      if (AppState.currentState === 'active') {
+        verifyCurrentSession();
+      }
+    }, 30000);
+
+    return () => {
+      subscription.remove();
+      clearInterval(interval);
+    };
+  }, [token, user?.id, verifyCurrentSession]);
 
   const bootstrapAuth = async () => {
     try {
@@ -50,7 +118,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               const freshUser = await authService.getUserById(decoded.userId, savedToken);
               setUser(freshUser);
               await storageService.setUser(freshUser);
-            } catch (e) {
+            } catch (e: any) {
+              // If backend rejects this token (e.g. logged in on another device while app was closed)
+              if (e.response?.status === 401) {
+                console.warn('Saved session is no longer valid on server (logged in elsewhere)');
+                apiService.setAuthToken(null);
+                await storageService.clearAll();
+                setToken(null);
+                setUser(null);
+                handleSessionExpired('Your account was logged into from another device.');
+                return;
+              }
               console.warn('Could not refresh user profile on bootstrap:', e);
             }
           } else {

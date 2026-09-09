@@ -6,8 +6,8 @@ import {
   Animated,
   PanResponder,
   Dimensions,
-  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 
@@ -29,9 +29,11 @@ export const DraggableMapSettingsButton: React.FC<DraggableMapSettingsButtonProp
   hasActiveFilters = false,
   isLoading = false,
 }) => {
-  // Initial position: Floating on top right
+  const insets = useSafeAreaInsets();
+
+  // Initial position: Floating on top right, clearing notch / Dynamic Island dynamically
   const initialX = SCREEN_WIDTH - BUTTON_SIZE - PADDING;
-  const initialY = Platform.OS === 'ios' ? 70 : 50;
+  const initialY = Math.max(insets.top + 10, 50);
 
   const pan = useRef(new Animated.ValueXY({ x: initialX, y: initialY })).current;
   const lastOffset = useRef({ x: initialX, y: initialY });
@@ -64,14 +66,14 @@ export const DraggableMapSettingsButton: React.FC<DraggableMapSettingsButtonProp
           return;
         }
 
-        // Clamp inside screen bounds
+        // Clamp inside screen bounds respecting safe area insets
         let newX = lastOffset.current.x + gestureState.dx;
         let newY = lastOffset.current.y + gestureState.dy;
 
-        const minX = PADDING;
-        const maxX = SCREEN_WIDTH - BUTTON_SIZE - PADDING;
-        const minY = 50;
-        const maxY = SCREEN_HEIGHT - 170; // Keep above bottom FABs and bars
+        const minX = Math.max(PADDING, insets.left + 8);
+        const maxX = SCREEN_WIDTH - BUTTON_SIZE - Math.max(PADDING, insets.right + 8);
+        const minY = Math.max(insets.top + 8, 44);
+        const maxY = SCREEN_HEIGHT - insets.bottom - 130; // Keep safely above bottom FABs, home indicator and bars
 
         newX = Math.max(minX, Math.min(maxX, newX));
         newY = Math.max(minY, Math.min(maxY, newY));

@@ -8,6 +8,7 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { GeoJsonFeature } from '../../types/shapeInstance.types';
@@ -27,6 +28,7 @@ export const ShapeInstanceDetailModal: React.FC<ShapeInstanceDetailModalProps> =
   onClose,
   onFocus,
 }) => {
+  const insets = useSafeAreaInsets();
   if (!visible || !feature) return null;
 
   const geomType = feature.geometry?.type || 'Geometry';
@@ -68,7 +70,12 @@ export const ShapeInstanceDetailModal: React.FC<ShapeInstanceDetailModalProps> =
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheetContainer}>
+        <View
+          style={[
+            styles.sheetContainer,
+            { paddingBottom: Math.max(16, insets.bottom + 8) },
+          ]}
+        >
           {/* Handle */}
           <View style={styles.handle} />
 

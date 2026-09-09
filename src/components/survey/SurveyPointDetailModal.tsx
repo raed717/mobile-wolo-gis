@@ -9,6 +9,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { SurveyCaptureItem } from '../../types/survey.types';
@@ -26,6 +27,7 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
   onClose,
   onDelete,
 }) => {
+  const insets = useSafeAreaInsets();
   const [fullPhotoVisible, setFullPhotoVisible] = useState(false);
 
   if (!visible || !capture) return null;
@@ -59,7 +61,12 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
     <>
       <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
         <View style={styles.overlay}>
-          <View style={styles.sheet}>
+          <View
+            style={[
+              styles.sheet,
+              { paddingBottom: Math.max(20, insets.bottom + 10) },
+            ]}
+          >
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.titleCol}>

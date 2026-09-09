@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { CustomButton } from '../common/CustomButton';
@@ -48,6 +49,7 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
   onSave,
   onRetake,
 }) => {
+  const insets = useSafeAreaInsets();
   const { shapes, isLoading: isShapesLoading, getShapeStyle } = useShapes();
 
   const [selectedShape, setSelectedShape] = useState<Shape | null>(null);
@@ -120,7 +122,12 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View
+          style={[
+            styles.sheet,
+            { paddingBottom: Math.max(20, insets.bottom + 10) },
+          ]}
+        >
           {/* Header */}
           <View style={styles.header}>
             <View>

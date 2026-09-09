@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { Shape } from '../../types/shape.types';
@@ -22,6 +23,7 @@ export const ShapeDetailModal: React.FC<ShapeDetailModalProps> = ({
   visible,
   onClose,
 }) => {
+  const insets = useSafeAreaInsets();
   if (!shape) return null;
 
   const attributes = shape.attributes || [];
@@ -36,7 +38,12 @@ export const ShapeDetailModal: React.FC<ShapeDetailModalProps> = ({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View
+          style={[
+            styles.sheet,
+            { paddingBottom: Math.max(20, insets.bottom + 10) },
+          ]}
+        >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleArea}>

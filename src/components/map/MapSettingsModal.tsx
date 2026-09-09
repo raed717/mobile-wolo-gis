@@ -10,6 +10,7 @@ import {
   Switch,
   TextInput,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { ShapeStats, ObjNameFilterItem } from '../../types/shapeInstance.types';
@@ -80,6 +81,7 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({
   onRecenterProject,
   onLocateMe,
 }) => {
+  const insets = useSafeAreaInsets();
   const [objSearchText, setObjSearchText] = React.useState('');
 
   if (!visible) return null;
@@ -117,7 +119,12 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheetContainer}>
+        <View
+          style={[
+            styles.sheetContainer,
+            { paddingBottom: Math.max(16, insets.bottom + 8) },
+          ]}
+        >
           {/* Top Handle */}
           <View style={styles.handle} />
 
