@@ -26,6 +26,7 @@ import { MapSettingsModal } from '../../components/map/MapSettingsModal';
 import { useDeviceLocation } from '../../hooks/useDeviceLocation';
 import { useSurveyCaptures } from '../../hooks/useSurveyCaptures';
 import { useProjectShapeInstances } from '../../hooks/useProjectShapeInstances';
+import { useAuth } from '../../context/AuthContext';
 import { GeoJsonFeature } from '../../types/shapeInstance.types';
 
 interface ProjectMapModalProps {
@@ -72,16 +73,20 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
   } = useProjectShapeInstances(project?.id, visible);
 
   // Modals & UI state
+  const { apiUrl } = useAuth();
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const [capturedLocation, setCapturedLocation] = useState<UserLocation | null>(null);
   const [isCaptureModalVisible, setIsCaptureModalVisible] = useState<boolean>(false);
   const [selectedCapture, setSelectedCapture] = useState<SurveyCaptureItem | null>(null);
   const [selectedShapeFeature, setSelectedShapeFeature] = useState<GeoJsonFeature | null>(null);
   const [showShapesLayer, setShowShapesLayer] = useState<boolean>(true);
+  const [showOrthomosaicLayer, setShowOrthomosaicLayer] = useState<boolean>(false);
   const [isMapSettingsOpen, setIsMapSettingsOpen] = useState<boolean>(false);
   const [currentBasemap, setCurrentBasemap] = useState<BasemapType>('streets');
   const [isCapturesListOpen, setIsCapturesListOpen] = useState<boolean>(false);
   const [isCameraLaunching, setIsCameraLaunching] = useState<boolean>(false);
+
+  const hasOrthomosaic = !!(project?.orthophotoUrl && project.orthophotoUrl.length > 0);
 
   const handleSelectBasemap = (type: BasemapType) => {
     setCurrentBasemap(type);
@@ -240,6 +245,8 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
               shapes={shapeFeatures}
               stylesMap={stylesMap}
               showShapes={showShapesLayer}
+              showOrthomosaic={showOrthomosaicLayer}
+              backendUrl={apiUrl}
               onSelectCapture={setSelectedCapture}
               onSelectShape={setSelectedShapeFeature}
             />
@@ -253,6 +260,7 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
                 !showNative ||
                 !showImported ||
                 !showShapesLayer ||
+                (hasOrthomosaic && showOrthomosaicLayer) ||
                 hasObjNameFilter ||
                 currentBasemap !== 'streets'
               }
@@ -398,6 +406,10 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
             showImported={showImported}
             onToggleImported={setShowImported}
             shapeStats={shapeStats}
+            hasOrthomosaic={hasOrthomosaic}
+            showOrthomosaicLayer={showOrthomosaicLayer}
+            onToggleOrthomosaicLayer={setShowOrthomosaicLayer}
+            orthophotoCount={project.orthophotoUrl?.length || 0}
             objNamesList={objNamesByCategory[filterCategory] || []}
             selectedObjNames={selectedObjNames}
             onToggleObjName={toggleObjName}

@@ -12,6 +12,7 @@ export interface ProjectMapViewRef {
   flyToLocation: (lat: number, lng: number, zoom?: number) => void;
   fitBoundsToShapes: () => void;
   switchBasemap: (type: BasemapType) => void;
+  setOrthomosaicVisible: (visible: boolean) => void;
 }
 
 interface ProjectMapViewProps {
@@ -24,6 +25,8 @@ interface ProjectMapViewProps {
     byName: Record<string, ShapeStyleDefinition>;
   };
   showShapes?: boolean;
+  showOrthomosaic?: boolean;
+  backendUrl?: string;
   onSelectCapture?: (capture: SurveyCaptureItem) => void;
   onSelectShape?: (feature: GeoJsonFeature) => void;
   style?: any;
@@ -38,6 +41,8 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       shapes = [],
       stylesMap,
       showShapes = true,
+      showOrthomosaic = false,
+      backendUrl = '',
       onSelectCapture,
       onSelectShape,
       style,
@@ -84,9 +89,20 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           webViewRef.current.injectJavaScript(js);
         }
       },
+      setOrthomosaicVisible: (visible: boolean) => {
+        if (webViewRef.current) {
+          const js = `
+            if (window.setOrthomosaicVisible) {
+              window.setOrthomosaicVisible(${visible});
+            }
+            true;
+          `;
+          webViewRef.current.injectJavaScript(js);
+        }
+      },
     }));
 
-    // Inject JS updates directly when captures, shapes, or userLocation changes
+    // Inject JS updates directly when captures, shapes, userLocation, or orthomosaic changes
     useEffect(() => {
       if (webViewRef.current && captures) {
         const capturesJson = JSON.stringify(captures);
@@ -127,6 +143,18 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     }, [showShapes]);
 
     useEffect(() => {
+      if (webViewRef.current) {
+        const js = `
+          if (window.setOrthomosaicVisible) {
+            window.setOrthomosaicVisible(${showOrthomosaic});
+          }
+          true;
+        `;
+        webViewRef.current.injectJavaScript(js);
+      }
+    }, [showOrthomosaic]);
+
+    useEffect(() => {
       if (webViewRef.current && userLocation) {
         const locJson = JSON.stringify(userLocation);
         const js = `
@@ -143,9 +171,11 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       const initialCapturesJson = JSON.stringify(captures);
       const initialLocationJson = JSON.stringify(userLocation);
       const initialShapesJson = JSON.stringify(shapes);
-      const initialStylesJson = JSON.stringify(stylesMap || { byId: {}, byName: {} });
+    const initialStylesJson = JSON.stringify(stylesMap || { byId: {}, byName: {} });
+    const orthoUrlsJson = JSON.stringify(project.orthophotoUrl || []);
+    const cleanBackendUrl = (backendUrl || '').replace(/\/+$/, '');
 
-      return `
+    return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -157,6 +187,10 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     html, body, #map { width: 100%; height: 100%; background: #0c0d13; }
     
     /* Leaflet Controls */
+    .leaflet-top.leaflet-left {
+      top: 12px !important;
+      left: 12px !important;
+    }
     .leaflet-bar {
       border: none !important;
       box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
@@ -275,38 +309,46 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     let allShapes = ${initialShapesJson};
     let stylesData = ${initialStylesJson};
     let shapesVisible = ${showShapes};
+    let orthoVisible = ${showOrthomosaic};
+    const orthoUrls = ${orthoUrlsJson};
+    const backendUrl = '${cleanBackendUrl}';
 
     // Tile Layers
     const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
+      maxZoom: 26,
+      maxNativeZoom: 19,
       attribution: '© OpenStreetMap'
     });
 
     const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
+      maxZoom: 26,
+      maxNativeZoom: 19,
       attribution: '© Esri Satellite'
     });
 
     const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
+      maxZoom: 26,
+      maxNativeZoom: 19,
       attribution: '© CARTO Dark'
     });
 
-    // Initialize Map
-    const initialCenter = userLoc && userLoc.latitude ? [userLoc.latitude, userLoc.longitude] : [lat, lng];
-    const initialZoom = userLoc && userLoc.latitude ? 17 : 16;
+    // Initialize Map (Always center on project coordinates by default)
+    const initialCenter = [lat, lng];
+    const initialZoom = 16;
 
     const map = L.map('map', {
       center: initialCenter,
       zoom: initialZoom,
       layers: [streets],
       zoomControl: false,
-      preferCanvas: true
+      preferCanvas: true,
+      maxZoom: 26,
+      minZoom: 0
     });
     window.map = map;
 
-    // Position Zoom Controls neatly at bottom-left
-    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+    // Position Zoom Controls at top-left
+    L.control.zoom({ position: 'topleft' }).addTo(map);
 
     const baseLayers = {
       streets: streets,
@@ -315,12 +357,63 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     };
     let currentBasemap = 'streets';
 
+    // Orthomosaic Layer Group
+    const orthomosaicGroup = L.layerGroup();
+    window.orthomosaicGroup = orthomosaicGroup;
+
+    function buildOrthomosaicLayers() {
+      orthomosaicGroup.clearLayers();
+      if (Array.isArray(orthoUrls) && orthoUrls.length > 0 && backendUrl) {
+        orthoUrls.forEach(url => {
+          if (!url) return;
+          const cleanUrl = url.startsWith('/') ? url.slice(1) : url;
+          const fullWmsUrl = backendUrl + '/' + cleanUrl;
+          const orthoLayer = L.tileLayer.wms(fullWmsUrl, {
+            minZoom: 13,
+            maxZoom: 26,
+            maxNativeZoom: 22,
+            tileSize: 256,
+            noWrap: true,
+            format: 'image/png',
+            transparent: true,
+          });
+          orthoLayer.addTo(orthomosaicGroup);
+        });
+      }
+    }
+
+    buildOrthomosaicLayers();
+
+    window.setOrthomosaicVisible = function(visible) {
+      orthoVisible = !!visible;
+      if (orthoVisible) {
+        if (!map.hasLayer(orthomosaicGroup)) {
+          orthomosaicGroup.addTo(map);
+        }
+        // Ensure orthomosaic stays on top of base tiles but behind shapes
+        if (baseLayers[currentBasemap]) {
+          baseLayers[currentBasemap].bringToBack();
+        }
+      } else {
+        if (map.hasLayer(orthomosaicGroup)) {
+          map.removeLayer(orthomosaicGroup);
+        }
+      }
+    };
+
+    if (orthoVisible) {
+      window.setOrthomosaicVisible(true);
+    }
+
     window.switchBasemap = function(type) {
       if (baseLayers[type] && currentBasemap !== type) {
         map.removeLayer(baseLayers[currentBasemap]);
         map.addLayer(baseLayers[type]);
         baseLayers[type].bringToBack();
         currentBasemap = type;
+        if (orthoVisible && !map.hasLayer(orthomosaicGroup)) {
+          orthomosaicGroup.addTo(map);
+        }
       }
     };
 
@@ -665,6 +758,8 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           window.fitShapesBounds();
         } else if (data.type === 'SWITCH_BASEMAP' && data.basemap) {
           window.switchBasemap(data.basemap);
+        } else if (data.type === 'TOGGLE_ORTHOMOSAIC') {
+          window.setOrthomosaicVisible(data.visible);
         } else if (data.type === 'FLY_TO' && data.lat && data.lng) {
           map.flyTo([data.lat, data.lng], data.zoom || 18, { animate: true, duration: 1.2 });
         }
@@ -681,7 +776,7 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
 </body>
 </html>
       `;
-    }, [lat, lng, captures]);
+    }, [lat, lng, captures, project.orthophotoUrl, backendUrl]);
 
     const handleMessage = (event: any) => {
       try {

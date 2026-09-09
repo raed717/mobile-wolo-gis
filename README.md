@@ -28,6 +28,7 @@ A cross-platform mobile GIS, asset management, and field survey application for 
   - **Draggable Map Settings & Filter Button (`DraggableMapSettingsButton`)**: High-priority floating button draggable across the screen, avoiding visual overlap with Leaflet zoom buttons or native map controls. Features live asset count badge and active-filter indicator.
   - **Map Settings & GIS Filter Modal (`MapSettingsModal`)**:
     - **Multi-Basemap Switcher**: Instant switching between OpenStreetMap, Satellite, and Dark GIS.
+    - **Orthomosaïque WMS Overlay**: High-resolution georeferenced aerial imagery layer served directly from the backend / NAS server (`project.orthophotoUrl`). Seamlessly overlays on top of streets or satellite basemaps with automatic opacity and multi-layer support up to zoom 26.
     - **Master Toggle**: Show or hide the entire shapes layer.
     - **Geometry Type Filter**: Filter by `ALL`, `POLYGON`, `LINE`, and `POINT`.
     - **Data Source Origin Filter**: Toggle between `Native Web` and `Imported Files`.

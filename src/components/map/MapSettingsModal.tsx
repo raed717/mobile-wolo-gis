@@ -34,6 +34,11 @@ interface MapSettingsModalProps {
   showImported: boolean;
   onToggleImported: (show: boolean) => void;
   shapeStats: ShapeStats;
+  // Orthomosaic Layer
+  hasOrthomosaic?: boolean;
+  showOrthomosaicLayer?: boolean;
+  onToggleOrthomosaicLayer?: (show: boolean) => void;
+  orthophotoCount?: number;
   // Obj Name Filtering
   objNamesList: ObjNameFilterItem[];
   selectedObjNames: string[];
@@ -61,6 +66,10 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({
   showImported,
   onToggleImported,
   shapeStats,
+  hasOrthomosaic = false,
+  showOrthomosaicLayer = false,
+  onToggleOrthomosaicLayer,
+  orthophotoCount = 0,
   objNamesList,
   selectedObjNames,
   onToggleObjName,
@@ -211,6 +220,47 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({
                   );
                 })}
               </View>
+            </View>
+
+            {/* SECTION: ORTHOMOSAIC OVERLAY LAYER */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderBetween}>
+                <View style={styles.sectionHeaderRow}>
+                  <Ionicons name="images-outline" size={16} color="#38bdf8" />
+                  <Text style={styles.sectionTitle}>Orthomosaïque WMS</Text>
+                  {hasOrthomosaic && orthophotoCount > 0 && (
+                    <View style={[styles.badgePill, { backgroundColor: 'rgba(56, 189, 248, 0.18)' }]}>
+                      <Text style={[styles.badgePillText, { color: '#38bdf8' }]}>
+                        {orthophotoCount} {orthophotoCount === 1 ? 'Layer' : 'Layers'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Orthomosaic Toggle */}
+                <View style={styles.switchRow}>
+                  <Text style={styles.switchLabel}>
+                    {!hasOrthomosaic
+                      ? 'Unavailable'
+                      : showOrthomosaicLayer
+                      ? 'Active'
+                      : 'Disabled'}
+                  </Text>
+                  <Switch
+                    value={showOrthomosaicLayer}
+                    onValueChange={onToggleOrthomosaicLayer}
+                    disabled={!hasOrthomosaic}
+                    trackColor={{ false: 'rgba(255,255,255,0.1)', true: '#38bdf8' }}
+                    thumbColor={showOrthomosaicLayer ? '#16192e' : '#94a3b8'}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.orthoSectionDesc}>
+                {hasOrthomosaic
+                  ? 'High-resolution georeferenced orthophoto aerial imagery served via WMS overlay.'
+                  : 'No orthomosaic imagery layers uploaded for this project.'}
+              </Text>
             </View>
 
             {/* SECTION 2: SHAPES & VECTOR LAYERS */}
@@ -809,5 +859,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textMuted,
   },
+  orthoSectionDesc: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    lineHeight: 16,
+    marginTop: 2,
+  },
 });
+
 
