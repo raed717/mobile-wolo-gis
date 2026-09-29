@@ -64,6 +64,7 @@ export const shapeInstanceService = {
             geometry = JSON.parse(geometry);
           } catch (e) {
             console.warn('Failed to parse imported geometry JSON:', e);
+            geometry = null;
           }
         }
 
@@ -84,7 +85,14 @@ export const shapeInstanceService = {
           },
           isImported: true,
         };
-      });
+      })
+      .filter(
+        (f) =>
+          f.geometry &&
+          typeof f.geometry === 'object' &&
+          typeof f.geometry.type === 'string' &&
+          Array.isArray(f.geometry.coordinates)
+      );
   },
 
   /**
@@ -105,8 +113,17 @@ export const shapeInstanceService = {
 
     const importedFeatures = this.convertImportedToGeoJson(importedList);
 
+    const validNativeFeatures = (nativeCollection.features || []).filter(
+      (f) =>
+        f &&
+        f.geometry &&
+        typeof f.geometry === 'object' &&
+        typeof f.geometry.type === 'string' &&
+        Array.isArray(f.geometry.coordinates)
+    );
+
     const mergedFeatures: GeoJsonFeature[] = [
-      ...(nativeCollection.features || []),
+      ...validNativeFeatures,
       ...importedFeatures,
     ];
 

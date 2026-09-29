@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useRef, useMemo, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Project } from '../../types/project.types';
@@ -50,6 +50,7 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     ref
   ) => {
     const webViewRef = useRef<WebView>(null);
+    const [isMapReady, setIsMapReady] = useState(false);
 
     const lat = typeof project.lat === 'number' && !isNaN(project.lat) ? project.lat : 36.8065;
     const lng = typeof project.lng === 'number' && !isNaN(project.lng) ? project.lng : 10.1815;
@@ -102,33 +103,51 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       },
     }));
 
-    // Inject JS updates directly when captures, shapes, userLocation, or orthomosaic changes
+    // Reliable Shapes Sync function
+    const syncShapesToMap = useCallback(() => {
+      if (!webViewRef.current) return;
+      const shapesJson = JSON.stringify(shapes || []).replace(/<\/script/gi, '<\\/script');
+      const stylesJson = JSON.stringify(stylesMap || { byId: {}, byName: {} }).replace(/<\/script/gi, '<\\/script');
+      const js = `
+        if (window.updateShapesData) {
+          window.updateShapesData(${shapesJson}, ${stylesJson}, ${showShapes});
+        }
+        true;
+      `;
+      webViewRef.current.injectJavaScript(js);
+    }, [shapes, stylesMap, showShapes]);
+
+    // Push shapes whenever shapes, stylesMap, or showShapes changes, with safety retries
     useEffect(() => {
-      if (webViewRef.current && captures) {
-        const capturesJson = JSON.stringify(captures);
-        const js = `
-          if (window.renderCaptures) {
-            window.renderCaptures(${capturesJson});
-          }
-          true;
-        `;
-        webViewRef.current.injectJavaScript(js);
-      }
+      syncShapesToMap();
+      const t1 = setTimeout(syncShapesToMap, 350);
+      const t2 = setTimeout(syncShapesToMap, 900);
+      const t3 = setTimeout(syncShapesToMap, 1800);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }, [syncShapesToMap]);
+
+    // Reliable Captures Sync function
+    const syncCapturesToMap = useCallback(() => {
+      if (!webViewRef.current || !captures) return;
+      const capturesJson = JSON.stringify(captures).replace(/<\/script/gi, '<\\/script');
+      const js = `
+        if (window.renderCaptures) {
+          window.renderCaptures(${capturesJson});
+        }
+        true;
+      `;
+      webViewRef.current.injectJavaScript(js);
     }, [captures]);
 
     useEffect(() => {
-      if (webViewRef.current && shapes) {
-        const shapesJson = JSON.stringify(shapes);
-        const stylesJson = JSON.stringify(stylesMap || { byId: {}, byName: {} });
-        const js = `
-          if (window.updateShapesData) {
-            window.updateShapesData(${shapesJson}, ${stylesJson}, ${showShapes});
-          }
-          true;
-        `;
-        webViewRef.current.injectJavaScript(js);
-      }
-    }, [shapes, stylesMap, showShapes]);
+      syncCapturesToMap();
+      const t = setTimeout(syncCapturesToMap, 600);
+      return () => clearTimeout(t);
+    }, [syncCapturesToMap]);
 
     useEffect(() => {
       if (webViewRef.current) {
@@ -318,6 +337,73 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       100% { transform: scale(1.4); opacity: 0; }
     }
   </style>
+  <script>
+    // Early global buffers so React Native injectJavaScript is never missed or dropped
+    window._isMapReady = false;
+    window._pendingShapesData = null;
+    window._pendingCapturesData = null;
+    window._pendingUserLocation = null;
+    window._pendingOrthomosaicVisible = null;
+
+    window.updateShapesData = function(newShapes, newStyles, isVisible) {
+      if (!window._isMapReady || !window.shapesLayer) {
+        window._pendingShapesData = { newShapes: newShapes, newStyles: newStyles, isVisible: isVisible };
+        return;
+      }
+      if (Array.isArray(newShapes)) {
+        window.allShapes = newShapes;
+      }
+      if (newStyles) {
+        window.stylesData = newStyles;
+      }
+      if (typeof isVisible === 'boolean') {
+        window.shapesVisible = isVisible;
+      }
+      if (window.map) {
+        window.map.invalidateSize(false);
+      }
+      if (window.updateSmartRendering) {
+        window.updateSmartRendering();
+      }
+    };
+
+    window.setShapesVisible = function(isVisible) {
+      window.shapesVisible = !!isVisible;
+      if (window._isMapReady && window.updateSmartRendering) {
+        window.updateSmartRendering();
+      }
+    };
+
+    window.renderCaptures = function(items) {
+      if (!window._isMapReady || !window.capturesLayer) {
+        window._pendingCapturesData = items;
+        return;
+      }
+      if (window._doRenderCaptures) {
+        window._doRenderCaptures(items);
+      }
+    };
+
+    window.renderUserLocation = function(loc) {
+      if (!window._isMapReady || !window.map) {
+        window._pendingUserLocation = loc;
+        return;
+      }
+      if (window._doRenderUserLocation) {
+        window._doRenderUserLocation(loc);
+      }
+    };
+
+    window.setOrthomosaicVisible = function(visible) {
+      if (!window._isMapReady || !window.orthomosaicGroup) {
+        window._pendingOrthomosaicVisible = visible;
+        return;
+      }
+      if (window._doSetOrthomosaicVisible) {
+        window._doSetOrthomosaicVisible(visible);
+      }
+    };
+  </script>
 </head>
 <body>
   <div id="map"></div>
@@ -338,14 +424,14 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     const lng = ${lng};
     let captures = ${initialCapturesJson};
     let userLoc = ${initialLocationJson};
-    let allShapes = ${initialShapesJson};
-    let stylesData = ${initialStylesJson};
-    let shapesVisible = ${showShapes};
-    let orthoVisible = ${showOrthomosaic};
+    window.allShapes = ${initialShapesJson};
+    window.stylesData = ${initialStylesJson};
+    window.shapesVisible = ${showShapes};
+    window.orthoVisible = ${showOrthomosaic};
     const orthoUrls = ${orthoUrlsJson};
     const backendUrl = '${cleanBackendUrl}';
 
-    // Tile Layers
+    // Base Tile Layers
     const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 26,
       maxNativeZoom: 19,
@@ -416,13 +502,12 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
 
     buildOrthomosaicLayers();
 
-    window.setOrthomosaicVisible = function(visible) {
-      orthoVisible = !!visible;
-      if (orthoVisible) {
+    window._doSetOrthomosaicVisible = function(visible) {
+      window.orthoVisible = !!visible;
+      if (window.orthoVisible) {
         if (!map.hasLayer(orthomosaicGroup)) {
           orthomosaicGroup.addTo(map);
         }
-        // Ensure orthomosaic stays on top of base tiles but behind shapes
         if (baseLayers[currentBasemap]) {
           baseLayers[currentBasemap].bringToBack();
         }
@@ -433,8 +518,8 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       }
     };
 
-    if (orthoVisible) {
-      window.setOrthomosaicVisible(true);
+    if (window.orthoVisible) {
+      window._doSetOrthomosaicVisible(true);
     }
 
     window.switchBasemap = function(type) {
@@ -443,7 +528,7 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
         map.addLayer(baseLayers[type]);
         baseLayers[type].bringToBack();
         currentBasemap = type;
-        if (orthoVisible && !map.hasLayer(orthomosaicGroup)) {
+        if (window.orthoVisible && !map.hasLayer(orthomosaicGroup)) {
           orthomosaicGroup.addTo(map);
         }
       }
@@ -452,22 +537,26 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     // High-performance HTML5 Canvas Vector Renderer
     const canvasRenderer = L.canvas({ padding: 0.5, tolerance: 10 });
 
-    // Layers
+    // Layers attached directly to map and exposed to window
     const shapesLayer = L.featureGroup().addTo(map);
     const capturesLayer = L.layerGroup().addTo(map);
+    window.shapesLayer = shapesLayer;
+    window.capturesLayer = capturesLayer;
     let userGpsMarker = null;
     let selectedShapeLayer = null;
 
-    // ─────────────────────────────────────────────────────────────
-    // SMART RENDERING ENGINE FOR LARGE SHAPE DATASETS
-    // ─────────────────────────────────────────────────────────────
     let currentRenderGen = 0;
 
     function getFeatureStyle(feature, isSelected) {
       const shapeId = feature.shapeId;
-      const objName = (feature.properties && feature.properties['Obj Name']) ? String(feature.properties['Obj Name']).toLowerCase().trim() : '';
-      const byId = stylesData.byId || {};
-      const byName = stylesData.byName || {};
+      let objName = '';
+      if (feature.properties) {
+        const p = feature.properties;
+        const raw = p['Obj Name'] || p['obj Name'] || p['obj_name'] || p['name'] || p['Name'];
+        if (raw) objName = String(raw).toLowerCase().trim();
+      }
+      const byId = (window.stylesData && window.stylesData.byId) || {};
+      const byName = (window.stylesData && window.stylesData.byName) || {};
       const s = (shapeId && byId[shapeId]) ? byId[shapeId] : (objName && byName[objName] ? byName[objName] : null);
 
       const geomType = feature.geometry ? String(feature.geometry.type).toUpperCase() : '';
@@ -592,14 +681,12 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
         return bounds.contains([geom.coordinates[1], geom.coordinates[0]]);
       }
 
-      // Quick bounding check if pre-computed
       if (feature._bbox) {
         const [minLng, minLat, maxLng, maxLat] = feature._bbox;
         const fBounds = L.latLngBounds([[minLat, minLng], [maxLat, maxLng]]);
         return bounds.intersects(fBounds);
       }
 
-      // Compute simple bounding box once
       let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
       function scanCoords(c) {
         if (!Array.isArray(c)) return;
@@ -624,41 +711,56 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       return true;
     }
 
+    function isValidFeature(f) {
+      if (!f || !f.geometry) return false;
+      const g = f.geometry;
+      if (!g.type || typeof g.type !== 'string') return false;
+      if (!Array.isArray(g.coordinates) || g.coordinates.length === 0) return false;
+      return true;
+    }
+
     // Chunked progressive rendering to keep the WebView at 60 FPS
     function renderFeaturesProgressively(featuresToRender, gen) {
-      shapesLayer.clearLayers();
-      if (!featuresToRender || featuresToRender.length === 0 || !shapesVisible) return;
+      if (!window.shapesLayer) return;
+      window.shapesLayer.clearLayers();
+      if (!featuresToRender || featuresToRender.length === 0 || !window.shapesVisible) return;
 
       const chunkSize = 150;
       let index = 0;
 
       function renderNextChunk() {
-        if (gen !== currentRenderGen || !shapesVisible) return;
+        if (gen !== currentRenderGen || !window.shapesVisible || !window.shapesLayer) return;
 
         const slice = featuresToRender.slice(index, index + chunkSize);
         if (slice.length === 0) return;
 
-        const chunkGroup = L.geoJSON({ type: 'FeatureCollection', features: slice }, {
-          renderer: canvasRenderer,
-          style: function(f) {
-            return getFeatureStyle(f, false);
-          },
-          pointToLayer: function(f, latlng) {
-            const s = getFeatureStyle(f, false);
-            return L.circleMarker(latlng, {
-              ...s,
-              radius: 6
-            });
-          },
-          onEachFeature: function(f, layer) {
-            layer.on('click', function(e) {
-              L.DomEvent.stopPropagation(e);
-              onShapeClicked(f, layer, e.latlng);
-            });
-          }
-        });
+        try {
+          const chunkGroup = L.geoJSON({ type: 'FeatureCollection', features: slice }, {
+            renderer: canvasRenderer,
+            style: function(f) {
+              return getFeatureStyle(f, false);
+            },
+            pointToLayer: function(f, latlng) {
+              const s = getFeatureStyle(f, false);
+              return L.circleMarker(latlng, {
+                ...s,
+                radius: 6,
+                renderer: canvasRenderer
+              });
+            },
+            onEachFeature: function(f, layer) {
+              layer.on('click', function(e) {
+                L.DomEvent.stopPropagation(e);
+                onShapeClicked(f, layer, e.latlng);
+              });
+            }
+          });
 
-        chunkGroup.addTo(shapesLayer);
+          chunkGroup.addTo(window.shapesLayer);
+        } catch (err) {
+          console.warn('Error rendering shape chunk:', err);
+        }
+
         index += chunkSize;
 
         if (index < featuresToRender.length) {
@@ -673,81 +775,75 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       renderNextChunk();
     }
 
-    function updateSmartRendering() {
-      if (!shapesVisible) {
-        shapesLayer.clearLayers();
+    window.updateSmartRendering = function() {
+      if (!window.shapesLayer) return;
+      if (!window.shapesVisible) {
+        window.shapesLayer.clearLayers();
         return;
       }
-      if (!allShapes || allShapes.length === 0) {
-        shapesLayer.clearLayers();
+      if (!window.allShapes || window.allShapes.length === 0) {
+        window.shapesLayer.clearLayers();
         return;
       }
 
       currentRenderGen++;
       const gen = currentRenderGen;
 
-      // Small dataset: render all directly
-      if (allShapes.length <= 350) {
-        renderFeaturesProgressively(allShapes, gen);
+      const validFeatures = window.allShapes.filter(isValidFeature);
+      if (validFeatures.length === 0) {
+        window.shapesLayer.clearLayers();
         return;
       }
 
-      // Large dataset: apply Viewport Culling with 30% padding buffer
-      const currentZoom = map.getZoom();
-      const paddedBounds = map.getBounds().pad(0.3);
+      // Dataset up to 1500 features: render all directly via HTML5 canvas renderer
+      if (validFeatures.length <= 1500) {
+        renderFeaturesProgressively(validFeatures, gen);
+        return;
+      }
 
-      const visibleSlice = allShapes.filter(f => {
-        // Suppress tiny points at very far zoom levels (LOD)
-        if (f.geometry && f.geometry.type === 'Point' && currentZoom < 11) {
+      // Large dataset (>1500): Viewport Culling with 60% padding buffer
+      const currentZoom = map.getZoom();
+      const paddedBounds = map.getBounds().pad(0.6);
+
+      let visibleSlice = validFeatures.filter(f => {
+        if (f.geometry && f.geometry.type === 'Point' && currentZoom < 9) {
           return false;
         }
         return isFeatureInBounds(f, paddedBounds);
       });
 
-      renderFeaturesProgressively(visibleSlice, gen);
-    }
+      // Safety fallback: if viewport culling returned 0 features (e.g. map bounds not settled), render initial slice so shapes are never blank
+      if (visibleSlice.length === 0 && validFeatures.length > 0) {
+        visibleSlice = validFeatures.slice(0, 500);
+      }
 
-    // Debounced viewport updates on pan/zoom
+      renderFeaturesProgressively(visibleSlice, gen);
+    };
+
+    // Debounced viewport updates on pan/zoom for large datasets
     let moveTimer = null;
     map.on('moveend', function() {
-      if (allShapes && allShapes.length > 350 && shapesVisible) {
+      if (window.allShapes && window.allShapes.length > 1500 && window.shapesVisible) {
         clearTimeout(moveTimer);
-        moveTimer = setTimeout(updateSmartRendering, 120);
+        moveTimer = setTimeout(window.updateSmartRendering, 120);
       }
     });
 
-    window.updateShapesData = function(newShapes, newStyles, isVisible) {
-      allShapes = Array.isArray(newShapes) ? newShapes : [];
-      if (newStyles) stylesData = newStyles;
-      if (typeof isVisible === 'boolean') shapesVisible = isVisible;
-      updateSmartRendering();
-    };
-
-    window.setShapesVisible = function(isVisible) {
-      shapesVisible = !!isVisible;
-      updateSmartRendering();
-    };
-
     window.fitShapesBounds = function() {
-      if (shapesLayer && shapesLayer.getLayers().length > 0) {
+      if (window.shapesLayer && window.shapesLayer.getLayers().length > 0) {
         try {
-          const b = shapesLayer.getBounds();
-          if (b.isValid()) {
+          const b = window.shapesLayer.getBounds();
+          if (b && b.isValid()) {
             map.fitBounds(b, { padding: [30, 30], maxZoom: 18 });
           }
         } catch (e) {}
       }
     };
 
-    // Initial shape render
-    if (allShapes && allShapes.length > 0) {
-      updateSmartRendering();
-    }
-
     // ─────────────────────────────────────────────────────────────
     // USER GPS LOCATION & SURVEY CAPTURES
     // ─────────────────────────────────────────────────────────────
-    window.renderUserLocation = function(loc) {
+    window._doRenderUserLocation = function(loc) {
       if (!loc || typeof loc.latitude !== 'number') return;
       if (userGpsMarker) {
         userGpsMarker.setLatLng([loc.latitude, loc.longitude]);
@@ -761,12 +857,14 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
         userGpsMarker = L.marker([loc.latitude, loc.longitude], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
       }
     };
+
     if (userLoc) {
-      window.renderUserLocation(userLoc);
+      window._doRenderUserLocation(userLoc);
     }
 
-    window.renderCaptures = function(items) {
-      capturesLayer.clearLayers();
+    window._doRenderCaptures = function(items) {
+      if (!window.capturesLayer) return;
+      window.capturesLayer.clearLayers();
       if (!Array.isArray(items)) return;
 
       items.forEach(cap => {
@@ -793,7 +891,7 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           popupAnchor: [0, -40]
         });
 
-        const capMarker = L.marker([capLat, capLng], { icon: capIcon, zIndexOffset: 5000 }).addTo(capturesLayer);
+        const capMarker = L.marker([capLat, capLng], { icon: capIcon, zIndexOffset: 5000 }).addTo(window.capturesLayer);
 
         capMarker.on('click', () => {
           if (window.ReactNativeWebView) {
@@ -807,7 +905,7 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       });
     };
 
-    window.renderCaptures(captures);
+    window._doRenderCaptures(captures);
 
     // Message Listener for React Native postMessage
     function handleMsg(event) {
@@ -834,9 +932,47 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     window.addEventListener('message', handleMsg);
     document.addEventListener('message', handleMsg);
 
-    setTimeout(() => {
-      map.invalidateSize();
-    }, 200);
+    // Map initialization complete
+    window._isMapReady = true;
+
+    // Apply any shapes data queued while Leaflet was loading
+    if (window._pendingShapesData) {
+      const p = window._pendingShapesData;
+      window._pendingShapesData = null;
+      window.updateShapesData(p.newShapes, p.newStyles, p.isVisible);
+    } else if (window.allShapes && window.allShapes.length > 0) {
+      window.updateSmartRendering();
+    }
+
+    if (window._pendingCapturesData) {
+      const c = window._pendingCapturesData;
+      window._pendingCapturesData = null;
+      window.renderCaptures(c);
+    }
+
+    if (window._pendingUserLocation) {
+      const u = window._pendingUserLocation;
+      window._pendingUserLocation = null;
+      window.renderUserLocation(u);
+    }
+
+    if (window._pendingOrthomosaicVisible !== null) {
+      const o = window._pendingOrthomosaicVisible;
+      window._pendingOrthomosaicVisible = null;
+      window.setOrthomosaicVisible(o);
+    }
+
+    // Ensure map container calculates correct dimensions immediately and after render
+    map.invalidateSize(false);
+    setTimeout(() => { map.invalidateSize(false); }, 150);
+    setTimeout(() => { map.invalidateSize(false); }, 450);
+
+    // Notify React Native that Map is ready
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'MAP_READY'
+      }));
+    }
   </script>
 </body>
 </html>
@@ -846,7 +982,11 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     const handleMessage = (event: any) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
-        if (data.type === 'WEBVIEW_ERROR') {
+        if (data.type === 'MAP_READY') {
+          setIsMapReady(true);
+          syncShapesToMap();
+          syncCapturesToMap();
+        } else if (data.type === 'WEBVIEW_ERROR') {
           console.error('[ProjectMapView WebView Error]', data.message, 'line:', data.line, 'col:', data.col);
         } else if (data.type === 'CAPTURE_SELECTED' && onSelectCapture) {
           const found = captures.find((c) => c.id === data.captureId) || data.capture;
@@ -871,6 +1011,14 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           source={{ html: htmlContent }}
           style={styles.webview}
           onMessage={handleMessage}
+          onLoadEnd={() => {
+            // Backup trigger to ensure shapes & captures sync if MAP_READY was missed
+            setTimeout(() => {
+              setIsMapReady(true);
+              syncShapesToMap();
+              syncCapturesToMap();
+            }, 250);
+          }}
           javaScriptEnabled
           domStorageEnabled
           startInLoadingState

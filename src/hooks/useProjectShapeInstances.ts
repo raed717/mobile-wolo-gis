@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   GeoJsonFeature,
   ShapeStats,
@@ -39,6 +39,9 @@ export function useProjectShapeInstances(projectId?: number, enabled = true) {
     native: 0,
   });
   const [shapesCatalog, setShapesCatalog] = useState<Shape[]>([]);
+  const shapesCatalogRef = useRef<Shape[]>([]);
+  shapesCatalogRef.current = shapesCatalog;
+
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,7 +125,7 @@ export function useProjectShapeInstances(projectId?: number, enabled = true) {
       // Collect all unique Obj Names to initialize selection
       const allNamesSet = new Set<string>();
       items.forEach((f) => {
-        allNamesSet.add(getFeatureObjName(f, shapesCatalog));
+        allNamesSet.add(getFeatureObjName(f, shapesCatalogRef.current));
       });
       setSelectedObjNames(Array.from(allNamesSet));
       setHasUserModifiedObjFilters(false);
@@ -132,11 +135,22 @@ export function useProjectShapeInstances(projectId?: number, enabled = true) {
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, enabled, shapesCatalog]);
+  }, [projectId, enabled]);
 
   useEffect(() => {
     loadInstances();
   }, [loadInstances]);
+
+  // Keep selectedObjNames up-to-date if shapesCatalog resolves after instances were fetched
+  useEffect(() => {
+    if (!hasUserModifiedObjFilters && features.length > 0) {
+      const allNamesSet = new Set<string>();
+      features.forEach((f) => {
+        allNamesSet.add(getFeatureObjName(f, shapesCatalog));
+      });
+      setSelectedObjNames(Array.from(allNamesSet));
+    }
+  }, [shapesCatalog, features, hasUserModifiedObjFilters]);
 
   // Group unique Obj Names by geometry type with counts & colors
   const objNamesByCategory = useMemo(() => {
@@ -256,10 +270,12 @@ export function useProjectShapeInstances(projectId?: number, enabled = true) {
         if (!gType.includes(filterCategory)) return false;
       }
 
-      // 3. Object Name filter
-      const name = getFeatureObjName(f, shapesCatalog);
-      if (!selectedObjNames.includes(name)) {
-        return false;
+      // 3. Object Name filter (only filter if user explicitly changed obj name filters)
+      if (hasUserModifiedObjFilters) {
+        const name = getFeatureObjName(f, shapesCatalog);
+        if (!selectedObjNames.includes(name)) {
+          return false;
+        }
       }
 
       return true;
@@ -271,6 +287,7 @@ export function useProjectShapeInstances(projectId?: number, enabled = true) {
     showNative,
     selectedObjNames,
     shapesCatalog,
+    hasUserModifiedObjFilters,
   ]);
 
   const allAvailableObjNames = useMemo(

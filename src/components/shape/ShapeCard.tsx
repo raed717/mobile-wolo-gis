@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { Shape } from '../../types/shape.types';
+import { ShapeGeometryPreview } from './ShapeGeometryPreview';
 import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
 
 interface ShapeCardProps {
@@ -24,12 +25,6 @@ export const ShapeCard: React.FC<ShapeCardProps> = ({
 }) => {
   const normType = shape.type?.toUpperCase() || 'POINT';
 
-  const getTypeIcon = () => {
-    if (normType.includes('POLYGON')) return 'prism-outline';
-    if (normType.includes('LINE')) return 'analytics-outline';
-    return 'radio-button-on-outline';
-  };
-
   const getTypeColor = () => {
     if (normType.includes('POLYGON')) return '#20c997';
     if (normType.includes('LINE')) return '#3b82f6';
@@ -45,20 +40,12 @@ export const ShapeCard: React.FC<ShapeCardProps> = ({
       activeOpacity={0.85}
     >
       <View style={styles.topRow}>
-        {/* Style / Shape Preview Thumbnail */}
-        <View
-          style={[
-            styles.previewBox,
-            {
-              backgroundColor: stylePreview?.fillColor
-                ? `${stylePreview.fillColor}33`
-                : 'rgba(255, 156, 92, 0.15)',
-              borderColor: stylePreview?.strokeColor || getTypeColor(),
-            },
-          ]}
-        >
-          <Ionicons name={getTypeIcon() as any} size={22} color={getTypeColor()} />
-        </View>
+        {/* Style / Shape Preview Thumbnail with White Frame and SVG Hexagon Geometry */}
+        <ShapeGeometryPreview
+          type={shape.type}
+          stylePreview={stylePreview}
+          size={48}
+        />
 
         {/* Title & Type Badge */}
         <View style={styles.titleArea}>

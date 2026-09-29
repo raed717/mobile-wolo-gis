@@ -13,6 +13,8 @@ import { Colors } from '../../theme/colors';
 import { Shape } from '../../types/shape.types';
 import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
 
+import { ShapeGeometryPreview } from './ShapeGeometryPreview';
+
 interface ShapeDetailModalProps {
   shape: Shape | null;
   visible: boolean;
@@ -36,6 +38,18 @@ export const ShapeDetailModal: React.FC<ShapeDetailModalProps> = ({
       })
     : 'N/A';
 
+  const attrs = shape.attributes || [];
+  const getVal = (name: string) =>
+    attrs.find((a) => a.name?.toLowerCase() === name.toLowerCase())?.defaultValue;
+
+  const styleConfig = {
+    fillColor: getVal('Fill Color') || '#ff9c5c',
+    strokeColor: getVal('Stroke Col') || '#50246f',
+    opacity: parseFloat(getVal('Opacity') || '0.7'),
+    strokeWidth: parseFloat(getVal('Stroke Wid') || '2'),
+    markShape: getVal('markShape') || 'circle',
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -47,6 +61,12 @@ export const ShapeDetailModal: React.FC<ShapeDetailModalProps> = ({
         >
           {/* Header */}
           <View style={styles.header}>
+            <ShapeGeometryPreview
+              type={shape.type}
+              stylePreview={styleConfig}
+              size={48}
+              containerStyle={{ marginRight: 12 }}
+            />
             <View style={styles.titleArea}>
               <View style={styles.badgeRow}>
                 <Text style={styles.shapeName}>{shape.name}</Text>
