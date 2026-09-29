@@ -10,6 +10,7 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +29,7 @@ import { useSurveyCaptures } from '../../hooks/useSurveyCaptures';
 import { useProjectShapeInstances } from '../../hooks/useProjectShapeInstances';
 import { useAuth } from '../../context/AuthContext';
 import { GeoJsonFeature } from '../../types/shapeInstance.types';
+import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 interface ProjectMapModalProps {
   visible: boolean;
@@ -44,6 +46,9 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<ProjectMapViewRef>(null);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscape = windowWidth > windowHeight;
+  const [mapContainerSize, setMapContainerSize] = useState<{ width: number; height: number } | null>(null);
 
   // Device GPS
   const { location, isLocating, getCurrentLocation } = useDeviceLocation(visible);
@@ -197,12 +202,12 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#16192e" />
         <SafeAreaView style={styles.safeArea}>
           {/* Top Bar */}
-          <View style={styles.topBar}>
+          <View style={[styles.topBar, isLandscape && styles.topBarCompact]}>
             <TouchableOpacity
               style={styles.backButton}
               onPress={onClose}
@@ -237,7 +242,15 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
           </View>
 
           {/* Interactive Map with GPS, Survey Pins & Smart Vector Shapes */}
-          <View style={styles.mapContainer}>
+          <View
+            style={styles.mapContainer}
+            onLayout={(e) => {
+              const { width, height } = e.nativeEvent.layout;
+              setMapContainerSize((prev) =>
+                prev && prev.width === width && prev.height === height ? prev : { width, height }
+              );
+            }}
+          >
             <ProjectMapView
               ref={mapRef}
               project={project}
@@ -266,6 +279,7 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
                 currentBasemap !== 'streets'
               }
               isLoading={isShapesLoading}
+              containerSize={mapContainerSize}
             />
 
             {/* Floating Action Buttons */}
@@ -458,6 +472,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
     gap: 12,
+  },
+  topBarCompact: {
+    paddingVertical: 6,
   },
   backButton: {
     padding: 6,

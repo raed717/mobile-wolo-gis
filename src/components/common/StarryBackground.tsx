@@ -1,10 +1,8 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, View, Dimensions, ImageBackground } from 'react-native';
+import { StyleSheet, View, ImageBackground, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../theme/colors';
 import { AppAssets } from '../../config/assets';
-
-const { width, height } = Dimensions.get('window');
 
 interface Star {
   id: number;
@@ -15,15 +13,18 @@ interface Star {
 }
 
 export const StarryBackground: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { width, height } = useWindowDimensions();
+  // Scatter over the longest side in both axes so stars cover the screen in any orientation
+  const span = Math.max(width, height);
   const stars: Star[] = useMemo(() => {
     return Array.from({ length: 45 }).map((_, i) => ({
       id: i,
-      top: Math.random() * height,
-      left: Math.random() * width,
+      top: Math.random() * span,
+      left: Math.random() * span,
       size: Math.random() * 2.5 + 1,
       opacity: Math.random() * 0.7 + 0.3,
     }));
-  }, []);
+  }, [span]);
 
   return (
     <View style={styles.container}>
@@ -70,6 +71,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.bgDark,
+    overflow: 'hidden',
   },
   star: {
     position: 'absolute',

@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { Project } from '../../types/project.types';
 import { CustomButton } from '../common/CustomButton';
+import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 interface ProjectDetailModalProps {
   project: Project | null;
@@ -51,7 +52,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View
           style={[

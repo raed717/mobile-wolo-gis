@@ -18,6 +18,7 @@ import { useShapes } from '../../hooks/useShapes';
 import { Shape } from '../../types/shape.types';
 import { SurveyCaptureItem, UserLocation } from '../../types/survey.types';
 import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
+import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 const DEFAULT_FALLBACK_SHAPE: Shape = {
   id: 0,
@@ -121,7 +122,7 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
   const displayShapes = shapes.length > 0 ? shapes : [DEFAULT_FALLBACK_SHAPE];
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View
           style={[

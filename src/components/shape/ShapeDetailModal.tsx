@@ -14,6 +14,7 @@ import { Shape } from '../../types/shape.types';
 import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
 
 import { ShapeGeometryPreview } from './ShapeGeometryPreview';
+import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 interface ShapeDetailModalProps {
   shape: Shape | null;
@@ -51,7 +52,7 @@ export const ShapeDetailModal: React.FC<ShapeDetailModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View
           style={[

@@ -13,6 +13,7 @@ import { CustomInput } from '../../components/common/CustomInput';
 import { CustomButton } from '../../components/common/CustomButton';
 import { useAuth } from '../../context/AuthContext';
 import { DEV_MACHINE_IP, DEV_MACHINE_PORT } from '../../config/constants';
+import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -39,7 +40,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.modalCard}>
           {/* Header */}

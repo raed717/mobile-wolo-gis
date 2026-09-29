@@ -1,26 +1,26 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   Animated,
   PanResponder,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
 const BUTTON_SIZE = 52;
 const PADDING = 14;
+const BOTTOM_CLEARANCE = 90; // Keep safely above the bottom FAB row
 
 interface DraggableMapSettingsButtonProps {
   onPress: () => void;
   shapesCount?: number;
   hasActiveFilters?: boolean;
   isLoading?: boolean;
+  /** Size of the parent map container; falls back to the window size until measured */
+  containerSize?: { width: number; height: number } | null;
 }
 
 export const DraggableMapSettingsButton: React.FC<DraggableMapSettingsButtonProps> = ({
@@ -28,15 +28,47 @@ export const DraggableMapSettingsButton: React.FC<DraggableMapSettingsButtonProp
   shapesCount = 0,
   hasActiveFilters = false,
   isLoading = false,
+  containerSize,
 }) => {
-  const insets = useSafeAreaInsets();
+  const window = useWindowDimensions();
+  const boundsWidth = containerSize?.width ?? window.width;
+  const boundsHeight = containerSize?.height ?? window.height;
 
-  // Initial position: Floating on top right, clearing notch / Dynamic Island dynamically
-  const initialX = SCREEN_WIDTH - BUTTON_SIZE - PADDING;
-  const initialY = Math.max(insets.top + 10, 50);
+  // Latest bounds for the PanResponder callbacks (created once)
+  const boundsRef = useRef({ width: boundsWidth, height: boundsHeight });
+  boundsRef.current = { width: boundsWidth, height: boundsHeight };
+  const onPressRef = useRef(onPress);
+  onPressRef.current = onPress;
 
-  const pan = useRef(new Animated.ValueXY({ x: initialX, y: initialY })).current;
-  const lastOffset = useRef({ x: initialX, y: initialY });
+  const clamp = (x: number, y: number) => {
+    const { width, height } = boundsRef.current;
+    const minX = PADDING;
+    const maxX = Math.max(minX, width - BUTTON_SIZE - PADDING);
+    const minY = PADDING;
+    const maxY = Math.max(minY, height - BUTTON_SIZE - BOTTOM_CLEARANCE);
+    return {
+      x: Math.max(minX, Math.min(maxX, x)),
+      y: Math.max(minY, Math.min(maxY, y)),
+    };
+  };
+
+  // Initial position: top right of the map
+  const initial = { x: boundsWidth - BUTTON_SIZE - PADDING, y: PADDING };
+
+  const pan = useRef(new Animated.ValueXY(initial)).current;
+  const lastOffset = useRef(initial);
+  // Whether the user has moved the button; if not, keep it pinned to the top-right corner
+  const hasBeenDragged = useRef(false);
+
+  // Re-position when the container resizes (device rotation)
+  useEffect(() => {
+    const target = hasBeenDragged.current
+      ? clamp(lastOffset.current.x, lastOffset.current.y)
+      : clamp(boundsWidth - BUTTON_SIZE - PADDING, PADDING);
+    lastOffset.current = target;
+    pan.setValue(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boundsWidth, boundsHeight]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -62,26 +94,20 @@ export const DraggableMapSettingsButton: React.FC<DraggableMapSettingsButtonProp
 
         // Treat small movements (< 8px) as a tap
         if (moveDistance < 8) {
-          onPress();
+          onPressRef.current();
           return;
         }
 
-        // Clamp inside screen bounds respecting safe area insets
-        let newX = lastOffset.current.x + gestureState.dx;
-        let newY = lastOffset.current.y + gestureState.dy;
-
-        const minX = Math.max(PADDING, insets.left + 8);
-        const maxX = SCREEN_WIDTH - BUTTON_SIZE - Math.max(PADDING, insets.right + 8);
-        const minY = Math.max(insets.top + 8, 44);
-        const maxY = SCREEN_HEIGHT - insets.bottom - 130; // Keep safely above bottom FABs, home indicator and bars
-
-        newX = Math.max(minX, Math.min(maxX, newX));
-        newY = Math.max(minY, Math.min(maxY, newY));
-
-        lastOffset.current = { x: newX, y: newY };
+        // Clamp inside the map container
+        const target = clamp(
+          lastOffset.current.x + gestureState.dx,
+          lastOffset.current.y + gestureState.dy
+        );
+        lastOffset.current = target;
+        hasBeenDragged.current = true;
 
         Animated.spring(pan, {
-          toValue: { x: newX, y: newY },
+          toValue: target,
           useNativeDriver: false,
           friction: 6,
           tension: 40,

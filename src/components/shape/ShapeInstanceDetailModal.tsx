@@ -6,13 +6,14 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { GeoJsonFeature } from '../../types/shapeInstance.types';
 import { filterVisibleFeatureProperties } from '../../utils/shapeAttributeUtils';
+import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 interface ShapeInstanceDetailModalProps {
   visible: boolean;
@@ -21,8 +22,6 @@ interface ShapeInstanceDetailModalProps {
   onFocus?: (feature: GeoJsonFeature) => void;
 }
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
 export const ShapeInstanceDetailModal: React.FC<ShapeInstanceDetailModalProps> = ({
   visible,
   feature,
@@ -30,6 +29,7 @@ export const ShapeInstanceDetailModal: React.FC<ShapeInstanceDetailModalProps> =
   onFocus,
 }) => {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   if (!visible || !feature) return null;
 
   const geomType = feature.geometry?.type || 'Geometry';
@@ -55,12 +55,12 @@ export const ShapeInstanceDetailModal: React.FC<ShapeInstanceDetailModalProps> =
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View
           style={[
             styles.sheetContainer,
-            { paddingBottom: Math.max(16, insets.bottom + 8) },
+            { paddingBottom: Math.max(16, insets.bottom + 8), maxHeight: windowHeight * 0.75 },
           ]}
         >
           {/* Handle */}
@@ -198,7 +198,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
-    maxHeight: SCREEN_HEIGHT * 0.75,
     paddingTop: 8,
   },
   handle: {

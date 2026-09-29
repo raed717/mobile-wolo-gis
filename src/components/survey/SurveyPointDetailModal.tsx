@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { SurveyCaptureItem } from '../../types/survey.types';
+import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 interface SurveyPointDetailModalProps {
   capture: SurveyCaptureItem | null;
@@ -59,7 +60,7 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
 
   return (
     <>
-      <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} animationType="slide" transparent onRequestClose={onClose}>
         <View style={styles.overlay}>
           <View
             style={[
@@ -162,7 +163,7 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
       </Modal>
 
       {/* Full Photo Modal */}
-      <Modal visible={fullPhotoVisible} transparent animationType="fade">
+      <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={fullPhotoVisible} transparent animationType="fade">
         <View style={styles.fullPhotoOverlay}>
           <TouchableOpacity
             style={styles.fullPhotoClose}

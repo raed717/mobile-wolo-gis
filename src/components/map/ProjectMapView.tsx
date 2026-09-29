@@ -1,5 +1,5 @@
 import React, { useRef, useMemo, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
-import { StyleSheet, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, ActivityIndicator, LayoutChangeEvent } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Project } from '../../types/project.types';
 import { SurveyCaptureItem, UserLocation } from '../../types/survey.types';
@@ -979,6 +979,27 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       `;
     }, [lat, lng, captures, project.orthophotoUrl, backendUrl]);
 
+    // Re-measure the Leaflet map when the container is resized (e.g. device rotation),
+    // keeping the current center so the view doesn't jump.
+    const lastLayoutRef = useRef<{ width: number; height: number } | null>(null);
+    const handleContainerLayout = useCallback((e: LayoutChangeEvent) => {
+      const { width, height } = e.nativeEvent.layout;
+      const prev = lastLayoutRef.current;
+      lastLayoutRef.current = { width, height };
+      if (!prev || (prev.width === width && prev.height === height) || !webViewRef.current) return;
+      const js = `
+        if (window.map) {
+          var c = window.map.getCenter();
+          var fix = function() { window.map.invalidateSize(false); window.map.setView(c, window.map.getZoom(), { animate: false }); };
+          fix();
+          setTimeout(fix, 150);
+          setTimeout(fix, 400);
+        }
+        true;
+      `;
+      webViewRef.current.injectJavaScript(js);
+    }, []);
+
     const handleMessage = (event: any) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
@@ -1004,7 +1025,7 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     };
 
     return (
-      <View style={[styles.container, style]}>
+      <View style={[styles.container, style]} onLayout={handleContainerLayout}>
         <WebView
           ref={webViewRef}
           originWhitelist={['*']}

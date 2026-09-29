@@ -6,7 +6,7 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  Dimensions,
+  useWindowDimensions,
   Switch,
   TextInput,
 } from 'react-native';
@@ -14,8 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { ShapeStats, ObjNameFilterItem } from '../../types/shapeInstance.types';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 export type BasemapType = 'streets' | 'satellite' | 'dark';
 
@@ -82,6 +81,7 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({
   onLocateMe,
 }) => {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const [objSearchText, setObjSearchText] = React.useState('');
 
   if (!visible) return null;
@@ -117,12 +117,12 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View
           style={[
             styles.sheetContainer,
-            { paddingBottom: Math.max(16, insets.bottom + 8) },
+            { paddingBottom: Math.max(16, insets.bottom + 8), maxHeight: windowHeight * 0.85 },
           ]}
         >
           {/* Top Handle */}
@@ -514,7 +514,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
-    maxHeight: SCREEN_HEIGHT * 0.85,
     paddingTop: 8,
   },
   handle: {
