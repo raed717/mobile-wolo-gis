@@ -18,6 +18,15 @@ export interface SurveyCaptureItem {
   };
   attributeValues: Record<string, string>;
   notes?: string;
+  // Raw GPS fix, kept when the user manually corrects latitude/longitude
+  gpsLatitude?: number;
+  gpsLongitude?: number;
+  isPositionAdjusted?: boolean;
+}
+
+export interface LatLng {
+  lat: number;
+  lng: number;
 }
 
 export interface UserLocation {

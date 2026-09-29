@@ -13,6 +13,8 @@ export interface ProjectMapViewRef {
   fitBoundsToShapes: () => void;
   switchBasemap: (type: BasemapType) => void;
   setOrthomosaicVisible: (visible: boolean) => void;
+  /** Quickly recenter without the long flyTo animation (used for precise nudges) */
+  setView: (lat: number, lng: number, zoom?: number) => void;
 }
 
 interface ProjectMapViewProps {
@@ -30,6 +32,11 @@ interface ProjectMapViewProps {
   onSelectCapture?: (capture: SurveyCaptureItem) => void;
   onSelectShape?: (feature: GeoJsonFeature) => void;
   style?: any;
+  /** Overrides the initial project-centered view; keep the object stable (memoized) */
+  initialView?: { lat: number; lng: number; zoom?: number };
+  initialBasemap?: BasemapType;
+  /** When set, the map reports its center while panning */
+  onCenterChange?: (lat: number, lng: number) => void;
 }
 
 export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>(
@@ -46,6 +53,9 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       onSelectCapture,
       onSelectShape,
       style,
+      initialView,
+      initialBasemap,
+      onCenterChange,
     },
     ref
   ) => {
@@ -95,6 +105,17 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           const js = `
             if (window.setOrthomosaicVisible) {
               window.setOrthomosaicVisible(${visible});
+            }
+            true;
+          `;
+          webViewRef.current.injectJavaScript(js);
+        }
+      },
+      setView: (targetLat: number, targetLng: number, zoom?: number) => {
+        if (webViewRef.current) {
+          const js = `
+            if (window.map) {
+              window.map.setView([${targetLat}, ${targetLng}], ${zoom ?? 'window.map.getZoom()'}, { animate: false });
             }
             true;
           `;
@@ -451,8 +472,8 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
     });
 
     // Initialize Map (Always center on project coordinates by default)
-    const initialCenter = [lat, lng];
-    const initialZoom = 16;
+    const initialCenter = ${initialView ? `[${initialView.lat}, ${initialView.lng}]` : '[lat, lng]'};
+    const initialZoom = ${initialView?.zoom ?? 16};
 
     const map = L.map('map', {
       center: initialCenter,
@@ -962,6 +983,24 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       window.setOrthomosaicVisible(o);
     }
 
+    ${initialBasemap ? `window.switchBasemap('${initialBasemap}');` : ''}
+
+    // Report the map center while panning (position adjust mode)
+    if (${!!onCenterChange} && window.ReactNativeWebView) {
+      let lastCenterPost = 0;
+      const postCenter = function() {
+        const c = map.getCenter();
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'CENTER_CHANGED', lat: c.lat, lng: c.lng, zoom: map.getZoom()
+        }));
+      };
+      map.on('move', function() {
+        const now = Date.now();
+        if (now - lastCenterPost > 80) { lastCenterPost = now; postCenter(); }
+      });
+      map.on('moveend', postCenter);
+    }
+
     // Ensure map container calculates correct dimensions immediately and after render
     map.invalidateSize(false);
     setTimeout(() => { map.invalidateSize(false); }, 150);
@@ -977,7 +1016,7 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
 </body>
 </html>
       `;
-    }, [lat, lng, captures, project.orthophotoUrl, backendUrl]);
+    }, [lat, lng, captures, project.orthophotoUrl, backendUrl, initialView, initialBasemap, !!onCenterChange]);
 
     // Re-measure the Leaflet map when the container is resized (e.g. device rotation),
     // keeping the current center so the view doesn't jump.
@@ -1007,6 +1046,8 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
           setIsMapReady(true);
           syncShapesToMap();
           syncCapturesToMap();
+        } else if (data.type === 'CENTER_CHANGED' && onCenterChange) {
+          onCenterChange(data.lat, data.lng);
         } else if (data.type === 'WEBVIEW_ERROR') {
           console.error('[ProjectMapView WebView Error]', data.message, 'line:', data.line, 'col:', data.col);
         } else if (data.type === 'CAPTURE_SELECTED' && onSelectCapture) {

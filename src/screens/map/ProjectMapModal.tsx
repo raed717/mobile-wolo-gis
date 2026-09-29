@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -16,11 +16,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Project } from '../../types/project.types';
-import { SurveyCaptureItem, UserLocation } from '../../types/survey.types';
+import { LatLng, SurveyCaptureItem, UserLocation } from '../../types/survey.types';
 import { Colors } from '../../theme/colors';
 import { ProjectMapView, ProjectMapViewRef, BasemapType } from '../../components/map/ProjectMapView';
 import { SurveyCaptureModal } from '../../components/survey/SurveyCaptureModal';
 import { SurveyPointDetailModal } from '../../components/survey/SurveyPointDetailModal';
+import { PositionAdjustModal } from '../../components/survey/PositionAdjustModal';
 import { ShapeInstanceDetailModal } from '../../components/shape/ShapeInstanceDetailModal';
 import { DraggableMapSettingsButton } from '../../components/map/DraggableMapSettingsButton';
 import { MapSettingsModal } from '../../components/map/MapSettingsModal';
@@ -54,7 +55,7 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
   const { location, isLocating, getCurrentLocation } = useDeviceLocation(visible);
 
   // Local survey captures for this project
-  const { captures, addCapture, removeCapture } = useSurveyCaptures(project?.id);
+  const { captures, addCapture, updateCapture, removeCapture } = useSurveyCaptures(project?.id);
 
   // Project Shapes Instances (Native & Imported) with smart rendering data
   const {
@@ -91,6 +92,22 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
   const [currentBasemap, setCurrentBasemap] = useState<BasemapType>('streets');
   const [isCapturesListOpen, setIsCapturesListOpen] = useState<boolean>(false);
   const [isCameraLaunching, setIsCameraLaunching] = useState<boolean>(false);
+
+  // Manual position correction: corrected point for the capture being created,
+  // and which point (new or saved) is currently open in the adjust screen
+  const [adjustedPosition, setAdjustedPosition] = useState<LatLng | null>(null);
+  const [adjustTarget, setAdjustTarget] = useState<
+    { mode: 'new' } | { mode: 'existing'; capture: SurveyCaptureItem } | null
+  >(null);
+
+  // Hide the point being adjusted so it isn't shown at its old spot
+  const adjustContextCaptures = useMemo(
+    () =>
+      adjustTarget?.mode === 'existing'
+        ? captures.filter((c) => c.id !== adjustTarget.capture.id)
+        : captures,
+    [captures, adjustTarget]
+  );
 
   const hasOrthomosaic = !!(project?.orthophotoUrl && project.orthophotoUrl.length > 0);
 
@@ -160,6 +177,7 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setCapturedPhotoUri(result.assets[0].uri);
+        setAdjustedPosition(null);
         setCapturedLocation(effectiveLoc);
         setIsCaptureModalVisible(true);
       }
@@ -193,6 +211,7 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setCapturedPhotoUri(result.assets[0].uri);
+        setAdjustedPosition(null);
         setCapturedLocation(loc);
         setIsCaptureModalVisible(true);
       }
@@ -385,11 +404,14 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
           )}
 
           {/* Capture Shape & Attribute Binding Modal */}
+          {/* Hidden (not unmounted) while adjusting, so the form keeps its state */}
           <SurveyCaptureModal
-            visible={isCaptureModalVisible}
+            visible={isCaptureModalVisible && !adjustTarget}
             projectId={project.id}
             imageUri={capturedPhotoUri}
             location={capturedLocation}
+            adjustedPosition={adjustedPosition}
+            onAdjustPosition={() => setAdjustTarget({ mode: 'new' })}
             onClose={() => setIsCaptureModalVisible(false)}
             onSave={(item) => {
               addCapture(item);
@@ -403,11 +425,69 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
 
           {/* Survey Point Detail Sheet */}
           <SurveyPointDetailModal
-            visible={!!selectedCapture}
+            visible={!!selectedCapture && !adjustTarget}
             capture={selectedCapture}
             onClose={() => setSelectedCapture(null)}
             onDelete={(id) => removeCapture(id)}
+            onAdjustPosition={(c) => setAdjustTarget({ mode: 'existing', capture: c })}
           />
+
+          {/* Manual position correction (fixed crosshair + arrow nudge) */}
+          {adjustTarget &&
+            (() => {
+              let startPos: LatLng;
+              let gpsPos: LatLng;
+              let accuracy: number | null | undefined;
+              if (adjustTarget.mode === 'existing') {
+                const c = adjustTarget.capture;
+                startPos = { lat: c.latitude, lng: c.longitude };
+                gpsPos = { lat: c.gpsLatitude ?? c.latitude, lng: c.gpsLongitude ?? c.longitude };
+                accuracy = c.accuracy;
+              } else {
+                if (!capturedLocation) return null;
+                gpsPos = { lat: capturedLocation.latitude, lng: capturedLocation.longitude };
+                startPos = adjustedPosition || gpsPos;
+                accuracy = capturedLocation.accuracy;
+              }
+              return (
+                <PositionAdjustModal
+                  visible
+                  project={project}
+                  shapes={shapeFeatures}
+                  stylesMap={stylesMap}
+                  backendUrl={apiUrl}
+                  captures={adjustContextCaptures}
+                  initialPosition={startPos}
+                  gpsPosition={gpsPos}
+                  accuracy={accuracy}
+                  onCancel={() => setAdjustTarget(null)}
+                  onConfirm={async (pos) => {
+                    if (adjustTarget.mode === 'new') {
+                      setAdjustedPosition(pos);
+                      setAdjustTarget(null);
+                      return;
+                    }
+                    const c = adjustTarget.capture;
+                    const updated: SurveyCaptureItem = {
+                      ...c,
+                      latitude: pos.lat,
+                      longitude: pos.lng,
+                      gpsLatitude: c.gpsLatitude ?? c.latitude,
+                      gpsLongitude: c.gpsLongitude ?? c.longitude,
+                      isPositionAdjusted: true,
+                    };
+                    setAdjustTarget(null);
+                    try {
+                      await updateCapture(updated);
+                      setSelectedCapture(updated);
+                      mapRef.current?.flyToLocation(pos.lat, pos.lng, 18);
+                    } catch (e) {
+                      Alert.alert('Save Failed', 'Could not save the corrected position. Please try again.');
+                    }
+                  }}
+                />
+              );
+            })()}
 
           {/* Shape Instance Attribute & Inspection Detail Sheet */}
           <ShapeInstanceDetailModal

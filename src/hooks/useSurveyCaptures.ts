@@ -37,6 +37,15 @@ export function useSurveyCaptures(projectId: number | null | undefined) {
     [projectId]
   );
 
+  const updateCapture = useCallback(
+    async (item: SurveyCaptureItem) => {
+      if (!projectId) return;
+      await surveyStorageService.updateCapture(projectId, item);
+      setCaptures((prev) => prev.map((c) => (c.id === item.id ? item : c)));
+    },
+    [projectId]
+  );
+
   const removeCapture = useCallback(
     async (captureId: string) => {
       if (!projectId) return;
@@ -50,6 +59,7 @@ export function useSurveyCaptures(projectId: number | null | undefined) {
     captures,
     isLoading,
     addCapture,
+    updateCapture,
     removeCapture,
     reloadCaptures: loadCaptures,
   };

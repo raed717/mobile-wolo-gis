@@ -16,8 +16,9 @@ import { Colors } from '../../theme/colors';
 import { CustomButton } from '../common/CustomButton';
 import { useShapes } from '../../hooks/useShapes';
 import { Shape } from '../../types/shape.types';
-import { SurveyCaptureItem, UserLocation } from '../../types/survey.types';
+import { LatLng, SurveyCaptureItem, UserLocation } from '../../types/survey.types';
 import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
+import { formatOffset } from '../../utils/geoUtils';
 import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
 const DEFAULT_FALLBACK_SHAPE: Shape = {
@@ -37,6 +38,9 @@ interface SurveyCaptureModalProps {
   projectId: number;
   imageUri: string | null;
   location: UserLocation | null;
+  /** Manually corrected position; when set it replaces the GPS lat/lng on save */
+  adjustedPosition?: LatLng | null;
+  onAdjustPosition?: () => void;
   onClose: () => void;
   onSave: (item: SurveyCaptureItem) => void;
   onRetake: () => void;
@@ -47,6 +51,8 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
   projectId,
   imageUri,
   location,
+  adjustedPosition,
+  onAdjustPosition,
   onClose,
   onSave,
   onRetake,
@@ -94,8 +100,13 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
       id: `capture_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       projectId,
       imageUri,
-      latitude: location.latitude,
-      longitude: location.longitude,
+      latitude: adjustedPosition ? adjustedPosition.lat : location.latitude,
+      longitude: adjustedPosition ? adjustedPosition.lng : location.longitude,
+      ...(adjustedPosition && {
+        gpsLatitude: location.latitude,
+        gpsLongitude: location.longitude,
+        isPositionAdjusted: true,
+      }),
       altitude: location.altitude,
       accuracy: location.accuracy,
       timestamp: new Date().toISOString(),
@@ -156,20 +167,45 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
             </View>
 
             {/* GPS HUD Pill */}
-            {location && (
-              <View style={styles.gpsPill}>
-                <Ionicons name="navigate" size={16} color={Colors.secondary} />
-                <View style={styles.gpsTextCol}>
-                  <Text style={styles.gpsCoords}>
-                    {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
-                  </Text>
-                  <Text style={styles.gpsMeta}>
-                    Accuracy: ±{location.accuracy?.toFixed(1) || '0'}m • Alt: {location.altitude?.toFixed(0) || '0'}m
-                  </Text>
-                </View>
-                <View style={styles.liveGpsDot} />
-              </View>
-            )}
+            {location && (() => {
+              const gps = { lat: location.latitude, lng: location.longitude };
+              const shown = adjustedPosition || gps;
+              const offset = adjustedPosition ? formatOffset(gps, adjustedPosition) : null;
+              return (
+                <>
+                  <View style={styles.gpsPill}>
+                    <Ionicons
+                      name={adjustedPosition ? 'move' : 'navigate'}
+                      size={16}
+                      color={Colors.secondary}
+                    />
+                    <View style={styles.gpsTextCol}>
+                      <Text style={styles.gpsCoords}>
+                        {shown.lat.toFixed(6)}, {shown.lng.toFixed(6)}
+                      </Text>
+                      <Text style={styles.gpsMeta}>
+                        {adjustedPosition
+                          ? `Adjusted${offset ? ` · ${offset} of GPS` : ''}`
+                          : `Accuracy: ±${location.accuracy?.toFixed(1) || '0'}m • Alt: ${location.altitude?.toFixed(0) || '0'}m`}
+                      </Text>
+                    </View>
+                    <View style={styles.liveGpsDot} />
+                  </View>
+                  {onAdjustPosition && (
+                    <TouchableOpacity
+                      style={styles.adjustBtn}
+                      onPress={onAdjustPosition}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="move-outline" size={16} color={Colors.secondary} />
+                      <Text style={styles.adjustBtnText}>
+                        {adjustedPosition ? 'Re-adjust position' : 'Adjust position on map'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              );
+            })()}
 
             {/* Shape Selector */}
             <Text style={styles.sectionLabel}>Select Shape from Library</Text>
@@ -361,6 +397,24 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 156, 92, 0.25)',
     gap: 10,
     marginBottom: 18,
+  },
+  adjustBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: -10,
+    marginBottom: 18,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(255, 156, 92, 0.45)',
+  },
+  adjustBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.secondary,
   },
   gpsTextCol: {
     flex: 1,

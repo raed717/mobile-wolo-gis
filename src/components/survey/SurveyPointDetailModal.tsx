@@ -14,12 +14,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { SurveyCaptureItem } from '../../types/survey.types';
 import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
+import { formatOffset } from '../../utils/geoUtils';
 
 interface SurveyPointDetailModalProps {
   capture: SurveyCaptureItem | null;
   visible: boolean;
   onClose: () => void;
   onDelete: (captureId: string) => void;
+  onAdjustPosition?: (capture: SurveyCaptureItem) => void;
 }
 
 export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
@@ -27,6 +29,7 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
   visible,
   onClose,
   onDelete,
+  onAdjustPosition,
 }) => {
   const insets = useSafeAreaInsets();
   const [fullPhotoVisible, setFullPhotoVisible] = useState(false);
@@ -112,6 +115,38 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
                     {capture.latitude.toFixed(6)}, {capture.longitude.toFixed(6)}
                   </Text>
                 </View>
+
+                {capture.isPositionAdjusted &&
+                  capture.gpsLatitude !== undefined &&
+                  capture.gpsLongitude !== undefined && (
+                    <View style={styles.infoRow}>
+                      <View style={styles.adjustedBadge}>
+                        <Ionicons name="move" size={11} color={Colors.secondary} />
+                        <Text style={styles.adjustedBadgeText}>Manually adjusted</Text>
+                      </View>
+                      <Text style={[styles.value, styles.originalGpsValue]}>
+                        GPS: {capture.gpsLatitude.toFixed(6)}, {capture.gpsLongitude.toFixed(6)}
+                        {(() => {
+                          const off = formatOffset(
+                            { lat: capture.gpsLatitude, lng: capture.gpsLongitude },
+                            { lat: capture.latitude, lng: capture.longitude }
+                          );
+                          return off ? `\nMoved ${off}` : '';
+                        })()}
+                      </Text>
+                    </View>
+                  )}
+
+                {onAdjustPosition && (
+                  <TouchableOpacity
+                    style={styles.adjustBtn}
+                    onPress={() => onAdjustPosition(capture)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="move-outline" size={15} color={Colors.secondary} />
+                    <Text style={styles.adjustBtnText}>Adjust position on map</Text>
+                  </TouchableOpacity>
+                )}
 
                 {capture.altitude !== undefined && capture.altitude !== null && (
                   <View style={styles.infoRow}>
@@ -307,6 +342,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+  originalGpsValue: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.textMuted,
+    textAlign: 'right',
+  },
+  adjustedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 156, 92, 0.15)',
+  },
+  adjustedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.secondary,
+  },
+  adjustBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(255, 156, 92, 0.45)',
+  },
+  adjustBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.secondary,
   },
   sectionTitle: {
     fontSize: 14,

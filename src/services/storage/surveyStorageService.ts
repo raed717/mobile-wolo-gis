@@ -36,6 +36,21 @@ export const surveyStorageService = {
   },
 
   /**
+   * Replace an existing capture in place (keeps list order)
+   */
+  async updateCapture(projectId: number, item: SurveyCaptureItem): Promise<void> {
+    try {
+      const key = `${STORAGE_PREFIX}${projectId}`;
+      const existing = await this.getProjectCaptures(projectId);
+      const updated = existing.map((c) => (c.id === item.id ? item : c));
+      await AsyncStorage.setItem(key, JSON.stringify(updated));
+    } catch (e) {
+      console.error(`Failed to update capture #${item.id}:`, e);
+      throw e;
+    }
+  },
+
+  /**
    * Delete a capture item from local storage
    */
   async deleteCapture(projectId: number, captureId: string): Promise<void> {
