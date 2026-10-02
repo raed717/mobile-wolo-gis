@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,6 +9,7 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,28 +22,21 @@ import { filterVisibleShapeAttributes } from '../../utils/shapeAttributeUtils';
 import { formatOffset } from '../../utils/geoUtils';
 import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 
-const DEFAULT_FALLBACK_SHAPE: Shape = {
-  id: 0,
-  name: 'Survey Photo',
-  description: 'Standard geo-tagged photo point',
-  type: 'POINT',
-  createdAt: new Date().toISOString(),
-  attributes: [
-    { id: 1, name: 'Condition', type: 'string', defaultValue: 'Normal', shapeId: 0 },
-    { id: 2, name: 'Asset Type', type: 'string', defaultValue: 'General', shapeId: 0 },
-  ],
-};
+// A survey is saved as a Point shape instance, so only POINT shapes can be used
+const isPointShape = (shape: Shape) => (shape.type || '').toUpperCase() === 'POINT';
 
 interface SurveyCaptureModalProps {
   visible: boolean;
   projectId: number;
   imageUri: string | null;
+  imageMimeType?: string | null;
   location: UserLocation | null;
   /** Manually corrected position; when set it replaces the GPS lat/lng on save */
   adjustedPosition?: LatLng | null;
   onAdjustPosition?: () => void;
   onClose: () => void;
-  onSave: (item: SurveyCaptureItem) => void;
+  /** Rejects when the capture could not be saved at all (the form then stays open) */
+  onSave: (item: SurveyCaptureItem) => Promise<void>;
   onRetake: () => void;
 }
 
@@ -50,6 +44,7 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
   visible,
   projectId,
   imageUri,
+  imageMimeType,
   location,
   adjustedPosition,
   onAdjustPosition,
@@ -65,21 +60,31 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  // Auto-select first shape when available or fallback
+  const pointShapes = useMemo(() => shapes.filter(isPointShape), [shapes]);
+
+  // Auto-select the first POINT shape (the last used shape is kept between captures)
   useEffect(() => {
-    if (shapes.length > 0) {
-      if (!selectedShape || selectedShape.id === 0) {
-        handleSelectShape(shapes[0]);
-      }
-    } else if (!selectedShape) {
-      handleSelectShape(DEFAULT_FALLBACK_SHAPE);
+    if (pointShapes.length === 0) return;
+    const current = selectedShape && pointShapes.find((s) => s.id === selectedShape.id);
+    if (!current) {
+      handleSelectShape(pointShapes[0]);
     }
-  }, [shapes, visible]);
+  }, [pointShapes]);
+
+  // New photo -> fresh form (attribute defaults, empty notes)
+  useEffect(() => {
+    if (!imageUri) return;
+    setNotes('');
+    if (selectedShape) {
+      handleSelectShape(selectedShape);
+    }
+  }, [imageUri]);
 
   const handleSelectShape = (shape: Shape) => {
     setSelectedShape(shape);
     const initialAttrs: Record<string, string> = {};
-    (shape.attributes || []).forEach((attr) => {
+    // Styling attributes and "Obj Name" are set by the backend, like the web app does
+    filterVisibleShapeAttributes(shape.attributes || []).forEach((attr) => {
       initialAttrs[attr.name] = attr.defaultValue || '';
     });
     setAttributeValues(initialAttrs);
@@ -90,16 +95,17 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
   };
 
   const handleSave = async () => {
-    if (!imageUri || !location) return;
+    if (!imageUri || !location || !selectedShape || isSaving) return;
 
     setIsSaving(true);
-    const effectiveShape = selectedShape || DEFAULT_FALLBACK_SHAPE;
+    const effectiveShape = selectedShape;
     const shapeStyle = getShapeStyle(effectiveShape);
 
     const captureItem: SurveyCaptureItem = {
       id: `capture_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       projectId,
       imageUri,
+      imageMimeType: imageMimeType || 'image/jpeg',
       latitude: adjustedPosition ? adjustedPosition.lat : location.latitude,
       longitude: adjustedPosition ? adjustedPosition.lng : location.longitude,
       ...(adjustedPosition && {
@@ -123,14 +129,20 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
       notes: notes.trim() || undefined,
     };
 
-    onSave(captureItem);
-    setIsSaving(false);
-    onClose();
+    try {
+      await onSave(captureItem);
+      onClose();
+    } catch (e: any) {
+      console.error('Failed to save survey capture:', e);
+      Alert.alert('Save Failed', 'The survey point could not be saved on this device. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!visible || !imageUri) return null;
 
-  const displayShapes = shapes.length > 0 ? shapes : [DEFAULT_FALLBACK_SHAPE];
+  const displayShapes = pointShapes;
 
   return (
     <Modal supportedOrientations={MODAL_SUPPORTED_ORIENTATIONS} visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -211,6 +223,13 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
             <Text style={styles.sectionLabel}>Select Shape from Library</Text>
             {isShapesLoading && shapes.length === 0 ? (
               <ActivityIndicator size="small" color={Colors.secondary} style={{ marginVertical: 12 }} />
+            ) : displayShapes.length === 0 ? (
+              <View style={styles.noShapesBox}>
+                <Ionicons name="alert-circle-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.noShapesText}>
+                  No POINT shape is available. Create a POINT shape in the web platform to save survey points.
+                </Text>
+              </View>
             ) : (
               <ScrollView
                 horizontal
@@ -300,6 +319,7 @@ export const SurveyCaptureModal: React.FC<SurveyCaptureModalProps> = ({
                 title="Save Survey Point"
                 onPress={handleSave}
                 loading={isSaving}
+                disabled={!selectedShape || displayShapes.length === 0}
                 variant="secondary"
               />
             </View>
@@ -441,6 +461,22 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginBottom: 10,
     letterSpacing: 0.3,
+  },
+  noShapesBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    marginBottom: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 156, 92, 0.3)',
+    backgroundColor: 'rgba(255, 156, 92, 0.08)',
+  },
+  noShapesText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.textSecondary,
   },
   shapeCarousel: {
     gap: 10,

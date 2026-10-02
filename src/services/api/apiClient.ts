@@ -93,6 +93,10 @@ class ApiClient {
     storageService.setApiUrl(this.currentBaseUrl);
   }
 
+  public getAuthToken(): string | null {
+    return this.currentToken;
+  }
+
   public getBaseUrl(): string {
     return this.currentBaseUrl;
   }

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,13 +16,17 @@ import { Colors } from '../../theme/colors';
 import { SurveyCaptureItem } from '../../types/survey.types';
 import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
 import { formatOffset } from '../../utils/geoUtils';
+import { getSurveyImageSource } from '../../services/api/surveyService';
 
 interface SurveyPointDetailModalProps {
   capture: SurveyCaptureItem | null;
   visible: boolean;
   onClose: () => void;
-  onDelete: (captureId: string) => void;
+  /** Rejects when the deletion failed (the sheet then stays open) */
+  onDelete: (capture: SurveyCaptureItem) => Promise<void>;
   onAdjustPosition?: (capture: SurveyCaptureItem) => void;
+  onRetrySync?: () => void;
+  isSyncing?: boolean;
 }
 
 export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
@@ -30,9 +35,12 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
   onClose,
   onDelete,
   onAdjustPosition,
+  onRetrySync,
+  isSyncing,
 }) => {
   const insets = useSafeAreaInsets();
   const [fullPhotoVisible, setFullPhotoVisible] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   if (!visible || !capture) return null;
 
@@ -43,18 +51,39 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
       })
     : 'N/A';
 
+  const isSynced = capture.syncStatus === 'synced';
+  const isUploading = capture.syncStatus === 'uploading';
+  const imageSource = getSurveyImageSource(capture);
+
+  const status = isSynced
+    ? { label: 'Synced to server', color: Colors.success, icon: 'cloud-done-outline' as const }
+    : isUploading
+    ? { label: 'Uploading…', color: Colors.secondary, icon: 'cloud-upload-outline' as const }
+    : capture.syncStatus === 'failed'
+    ? { label: 'Upload failed', color: Colors.danger, icon: 'cloud-offline-outline' as const }
+    : { label: 'Waiting for upload', color: Colors.secondary, icon: 'time-outline' as const };
+
   const handleDelete = () => {
     Alert.alert(
       'Delete Survey Point',
-      'Are you sure you want to remove this locally captured survey point and photo?',
+      isSynced
+        ? 'This removes the survey point, its shape and its photo from the project for all users. Continue?'
+        : 'This survey point has not been uploaded yet. Remove it and its photo from this device?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            onDelete(capture.id);
-            onClose();
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              await onDelete(capture);
+              onClose();
+            } catch (e) {
+              Alert.alert('Delete Failed', 'Could not delete the survey point. Please try again.');
+            } finally {
+              setIsDeleting(false);
+            }
           },
         },
       ]
@@ -84,8 +113,16 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
               </View>
 
               <View style={styles.headerActions}>
-                <TouchableOpacity style={styles.deleteIconBtn} onPress={handleDelete}>
-                  <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                <TouchableOpacity
+                  style={styles.deleteIconBtn}
+                  onPress={handleDelete}
+                  disabled={isDeleting || isUploading}
+                >
+                  {isDeleting ? (
+                    <ActivityIndicator size="small" color={Colors.danger} />
+                  ) : (
+                    <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                  )}
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
                   <Ionicons name="close" size={20} color={Colors.textMuted} />
@@ -100,7 +137,7 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
                 onPress={() => setFullPhotoVisible(true)}
                 activeOpacity={0.9}
               >
-                <Image source={{ uri: capture.imageUri }} style={styles.photo} resizeMode="cover" />
+                <Image source={imageSource} style={styles.photo} resizeMode="cover" />
                 <View style={styles.expandBadge}>
                   <Ionicons name="expand-outline" size={14} color={Colors.white} />
                   <Text style={styles.expandText}>Tap to view full</Text>
@@ -137,7 +174,7 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
                     </View>
                   )}
 
-                {onAdjustPosition && (
+                {onAdjustPosition && !isUploading && (
                   <TouchableOpacity
                     style={styles.adjustBtn}
                     onPress={() => onAdjustPosition(capture)}
@@ -164,10 +201,40 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
                   </View>
                 )}
 
+                {capture.createdByName ? (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.label}>Surveyed by</Text>
+                    <Text style={styles.value}>{capture.createdByName}</Text>
+                  </View>
+                ) : null}
+
                 <View style={styles.infoRow}>
                   <Text style={styles.label}>Storage Status</Text>
-                  <Text style={[styles.value, { color: Colors.secondary }]}>Local (Offline)</Text>
+                  <View style={styles.statusValue}>
+                    <Ionicons name={status.icon} size={14} color={status.color} />
+                    <Text style={[styles.value, { color: status.color }]}>{status.label}</Text>
+                  </View>
                 </View>
+
+                {!isSynced && capture.syncError ? (
+                  <Text style={styles.syncErrorText}>{capture.syncError}</Text>
+                ) : null}
+
+                {!isSynced && !isUploading && onRetrySync && (
+                  <TouchableOpacity
+                    style={styles.adjustBtn}
+                    onPress={onRetrySync}
+                    disabled={isSyncing}
+                    activeOpacity={0.8}
+                  >
+                    {isSyncing ? (
+                      <ActivityIndicator size="small" color={Colors.secondary} />
+                    ) : (
+                      <Ionicons name="cloud-upload-outline" size={15} color={Colors.secondary} />
+                    )}
+                    <Text style={styles.adjustBtnText}>Upload now</Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               {/* Notes */}
@@ -207,7 +274,7 @@ export const SurveyPointDetailModal: React.FC<SurveyPointDetailModalProps> = ({
             <Ionicons name="close" size={28} color={Colors.white} />
           </TouchableOpacity>
           <Image
-            source={{ uri: capture.imageUri }}
+            source={imageSource}
             style={styles.fullPhoto}
             resizeMode="contain"
           />
@@ -241,6 +308,17 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  statusValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  syncErrorText: {
+    fontSize: 11,
+    color: Colors.danger,
+    marginTop: -4,
+    marginBottom: 8,
   },
   titleCol: {
     flex: 1,

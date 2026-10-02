@@ -31,6 +31,7 @@ import { useProjectShapeInstances } from '../../hooks/useProjectShapeInstances';
 import { useAuth } from '../../context/AuthContext';
 import { GeoJsonFeature } from '../../types/shapeInstance.types';
 import { MODAL_SUPPORTED_ORIENTATIONS } from '../../config/orientation';
+import { getSurveyImageSource } from '../../services/api/surveyService';
 
 interface ProjectMapModalProps {
   visible: boolean;
@@ -54,9 +55,6 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
   // Device GPS
   const { location, isLocating, getCurrentLocation } = useDeviceLocation(visible);
 
-  // Local survey captures for this project
-  const { captures, addCapture, updateCapture, removeCapture } = useSurveyCaptures(project?.id);
-
   // Project Shapes Instances (Native & Imported) with smart rendering data
   const {
     features: shapeFeatures,
@@ -79,12 +77,46 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
     hasObjNameFilter,
   } = useProjectShapeInstances(project?.id, visible);
 
+  // Survey points: backend surveys + captures waiting for upload on this device.
+  // Each synced survey is also a shape instance, so shapes are refreshed on changes.
+  const {
+    captures: rawCaptures,
+    pendingCount,
+    isSyncing,
+    addCapture,
+    updatePosition,
+    removeCapture,
+    syncPending,
+  } = useSurveyCaptures(visible ? project?.id : null, { onRemoteChange: refreshShapes });
+
+  // Remote surveys carry no style: color their pin like their shape
+  const captures = useMemo(
+    () =>
+      rawCaptures.map((c) => {
+        if (c.shapeStyle) return c;
+        const style = stylesMap.byId[c.shapeId];
+        return style
+          ? {
+              ...c,
+              shapeStyle: {
+                fillColor: style.fillColor || '#ff9c5c',
+                strokeColor: style.strokeColor || '#50246f',
+                opacity: style.opacity,
+                strokeWidth: style.strokeWidth,
+              },
+            }
+          : c;
+      }),
+    [rawCaptures, stylesMap]
+  );
+
   // Modals & UI state
   const { apiUrl } = useAuth();
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
+  const [capturedPhotoMime, setCapturedPhotoMime] = useState<string | null>(null);
   const [capturedLocation, setCapturedLocation] = useState<UserLocation | null>(null);
   const [isCaptureModalVisible, setIsCaptureModalVisible] = useState<boolean>(false);
-  const [selectedCapture, setSelectedCapture] = useState<SurveyCaptureItem | null>(null);
+  const [selectedCaptureId, setSelectedCaptureId] = useState<string | null>(null);
   const [selectedShapeFeature, setSelectedShapeFeature] = useState<GeoJsonFeature | null>(null);
   const [showShapesLayer, setShowShapesLayer] = useState<boolean>(true);
   const [showOrthomosaicLayer, setShowOrthomosaicLayer] = useState<boolean>(false);
@@ -108,6 +140,13 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
         : captures,
     [captures, adjustTarget]
   );
+
+  // Resolved from the live list so the detail sheet follows upload/sync status changes
+  const selectedCapture = useMemo(
+    () => captures.find((c) => c.id === selectedCaptureId) || null,
+    [captures, selectedCaptureId]
+  );
+  const setSelectedCapture = (c: SurveyCaptureItem | null) => setSelectedCaptureId(c ? c.id : null);
 
   const hasOrthomosaic = !!(project?.orthophotoUrl && project.orthophotoUrl.length > 0);
 
@@ -177,6 +216,7 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setCapturedPhotoUri(result.assets[0].uri);
+        setCapturedPhotoMime(result.assets[0].mimeType || null);
         setAdjustedPosition(null);
         setCapturedLocation(effectiveLoc);
         setIsCaptureModalVisible(true);
@@ -211,6 +251,7 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setCapturedPhotoUri(result.assets[0].uri);
+        setCapturedPhotoMime(result.assets[0].mimeType || null);
         setAdjustedPosition(null);
         setCapturedLocation(loc);
         setIsCaptureModalVisible(true);
@@ -329,8 +370,10 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
                   activeOpacity={0.8}
                 >
                   <Ionicons name="images-outline" size={20} color={Colors.white} />
-                  <View style={styles.fabCountBadge}>
-                    <Text style={styles.fabCountText}>{captures.length}</Text>
+                  <View style={[styles.fabCountBadge, pendingCount > 0 && styles.fabCountBadgePending]}>
+                    <Text style={styles.fabCountText}>
+                      {pendingCount > 0 ? `↑${pendingCount}` : captures.length}
+                    </Text>
                   </View>
                 </TouchableOpacity>
               )}
@@ -364,11 +407,30 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
             >
               <View style={styles.drawerTopRow}>
                 <Text style={styles.drawerHeaderTitle}>
-                  Local Survey Captures ({captures.length})
+                  Survey Points ({captures.length})
                 </Text>
-                <TouchableOpacity onPress={() => setIsCapturesListOpen(false)}>
-                  <Ionicons name="chevron-down" size={20} color={Colors.textMuted} />
-                </TouchableOpacity>
+                <View style={styles.drawerActions}>
+                  {pendingCount > 0 && (
+                    <TouchableOpacity
+                      style={styles.syncChip}
+                      onPress={syncPending}
+                      disabled={isSyncing}
+                      activeOpacity={0.8}
+                    >
+                      {isSyncing ? (
+                        <ActivityIndicator size="small" color={Colors.secondary} />
+                      ) : (
+                        <Ionicons name="cloud-upload-outline" size={14} color={Colors.secondary} />
+                      )}
+                      <Text style={styles.syncChipText}>
+                        {isSyncing ? 'Uploading…' : `Upload ${pendingCount}`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={() => setIsCapturesListOpen(false)}>
+                    <Ionicons name="chevron-down" size={20} color={Colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <ScrollView
@@ -388,7 +450,23 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
                     }}
                     activeOpacity={0.8}
                   >
-                    <Image source={{ uri: item.imageUri }} style={styles.cardThumb} />
+                    <View>
+                      <Image source={getSurveyImageSource(item)} style={styles.cardThumb} />
+                      {item.syncStatus !== 'synced' && (
+                        <View
+                          style={[
+                            styles.cardSyncBadge,
+                            item.syncStatus === 'failed' && styles.cardSyncBadgeFailed,
+                          ]}
+                        >
+                          <Ionicons
+                            name={item.syncStatus === 'failed' ? 'alert' : 'cloud-upload-outline'}
+                            size={10}
+                            color={Colors.white}
+                          />
+                        </View>
+                      )}
+                    </View>
                     <View style={styles.cardInfo}>
                       <Text style={styles.cardShapeName} numberOfLines={1}>
                         {item.shapeName}
@@ -409,16 +487,24 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
             visible={isCaptureModalVisible && !adjustTarget}
             projectId={project.id}
             imageUri={capturedPhotoUri}
+            imageMimeType={capturedPhotoMime}
             location={capturedLocation}
             adjustedPosition={adjustedPosition}
             onAdjustPosition={() => setAdjustTarget({ mode: 'new' })}
             onClose={() => setIsCaptureModalVisible(false)}
-            onSave={(item) => {
-              addCapture(item);
+            onSave={async (item) => {
+              // Throws only if the capture couldn't be stored on the device
+              const saved = await addCapture(item);
               if (mapRef.current) {
-                mapRef.current.flyToLocation(item.latitude, item.longitude, 18);
+                mapRef.current.flyToLocation(saved.latitude, saved.longitude, 18);
               }
-              setSelectedCapture(item);
+              setSelectedCapture(saved);
+              if (saved.syncStatus === 'failed') {
+                Alert.alert(
+                  'Saved on this device',
+                  `The survey point could not be uploaded yet (${saved.syncError}). It is kept on this phone and will be uploaded automatically.`
+                );
+              }
             }}
             onRetake={handleTakePhoto}
           />
@@ -428,8 +514,10 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
             visible={!!selectedCapture && !adjustTarget}
             capture={selectedCapture}
             onClose={() => setSelectedCapture(null)}
-            onDelete={(id) => removeCapture(id)}
+            onDelete={removeCapture}
             onAdjustPosition={(c) => setAdjustTarget({ mode: 'existing', capture: c })}
+            onRetrySync={syncPending}
+            isSyncing={isSyncing}
           />
 
           {/* Manual position correction (fixed crosshair + arrow nudge) */}
@@ -468,17 +556,9 @@ export const ProjectMapModal: React.FC<ProjectMapModalProps> = ({
                       return;
                     }
                     const c = adjustTarget.capture;
-                    const updated: SurveyCaptureItem = {
-                      ...c,
-                      latitude: pos.lat,
-                      longitude: pos.lng,
-                      gpsLatitude: c.gpsLatitude ?? c.latitude,
-                      gpsLongitude: c.gpsLongitude ?? c.longitude,
-                      isPositionAdjusted: true,
-                    };
                     setAdjustTarget(null);
                     try {
-                      await updateCapture(updated);
+                      const updated = await updatePosition(c, pos);
                       setSelectedCapture(updated);
                       mapRef.current?.flyToLocation(pos.lat, pos.lng, 18);
                     } catch (e) {
@@ -644,6 +724,9 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     borderRadius: 10,
   },
+  fabCountBadgePending: {
+    backgroundColor: '#f59e0b',
+  },
   fabCountText: {
     color: '#1a1024',
     fontSize: 10,
@@ -682,6 +765,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 10,
   },
+  drawerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  syncChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 156, 92, 0.45)',
+    backgroundColor: 'rgba(255, 156, 92, 0.1)',
+  },
+  syncChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.secondary,
+  },
   drawerHeaderTitle: {
     fontSize: 12,
     fontWeight: '700',
@@ -709,6 +813,22 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 8,
     backgroundColor: '#000',
+  },
+  cardSyncBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f59e0b',
+    borderWidth: 1.5,
+    borderColor: Colors.white,
+  },
+  cardSyncBadgeFailed: {
+    backgroundColor: Colors.danger,
   },
   cardInfo: {
     flex: 1,

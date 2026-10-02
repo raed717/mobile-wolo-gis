@@ -1,3 +1,11 @@
+/**
+ * synced: stored on the backend (survey_image + shape instance)
+ * pending: saved on the device, waiting for upload
+ * uploading: upload in progress (runtime only)
+ * failed: last upload attempt failed, will be retried
+ */
+export type SurveySyncStatus = 'synced' | 'pending' | 'uploading' | 'failed';
+
 export interface SurveyCaptureItem {
   id: string;
   projectId: number;
@@ -22,6 +30,14 @@ export interface SurveyCaptureItem {
   gpsLatitude?: number;
   gpsLongitude?: number;
   isPositionAdjusted?: boolean;
+  /** Missing on captures saved before backend sync existed: treated as pending */
+  syncStatus?: SurveySyncStatus;
+  syncError?: string;
+  /** survey_image id on the backend */
+  remoteId?: number;
+  shapeInstanceId?: string;
+  imageMimeType?: string;
+  createdByName?: string;
 }
 
 export interface LatLng {

@@ -207,8 +207,13 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       }
     }, [userLocation]);
 
+    // Only the first render's captures are baked into the page; later changes are
+    // injected by syncCapturesToMap, so a new/moved survey doesn't reload the whole map.
+    const capturesRef = useRef(captures);
+    capturesRef.current = captures;
+
     const htmlContent = useMemo(() => {
-      const initialCapturesJson = JSON.stringify(captures).replace(/<\/script/gi, '<\\/script');
+      const initialCapturesJson = JSON.stringify(capturesRef.current).replace(/<\/script/gi, '<\\/script');
       const initialLocationJson = JSON.stringify(userLocation).replace(/<\/script/gi, '<\\/script');
       const initialShapesJson = JSON.stringify(shapes).replace(/<\/script/gi, '<\\/script');
       const initialStylesJson = JSON.stringify(stylesMap || { byId: {}, byName: {} }).replace(/<\/script/gi, '<\\/script');
@@ -353,6 +358,24 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
       animation: cam-ring 2s infinite ease-out;
       pointer-events: none;
     }
+    /* Survey not uploaded yet: small status badge on the pin */
+    .camera-pin-sync {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 12px;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    }
+    .camera-pin-sync.pending { background: #f59e0b; }
+    .camera-pin-sync.failed { background: #dc3545; }
     @keyframes cam-ring {
       0% { transform: scale(0.6); opacity: 1; }
       100% { transform: scale(1.4); opacity: 0; }
@@ -896,12 +919,19 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
         const fillColor = cap.shapeStyle?.fillColor || '#ff9c5c';
         const strokeColor = cap.shapeStyle?.strokeColor || '#ffffff';
 
+        const syncBadge = cap.syncStatus === 'synced'
+          ? ''
+          : cap.syncStatus === 'failed'
+            ? '<div class="camera-pin-sync failed">!</div>'
+            : '<div class="camera-pin-sync pending">↑</div>';
+
         const capHtml = 
           '<div class="camera-pin-wrapper">' +
             '<div class="camera-pin-ring" style="border-color: ' + fillColor + '"></div>' +
             '<div class="camera-pin-head" style="background: ' + fillColor + '; border-color: ' + strokeColor + ';">' +
               '<span class="camera-pin-icon">📷</span>' +
             '</div>' +
+            syncBadge +
           '</div>';
 
         const capIcon = L.divIcon({
@@ -1016,7 +1046,7 @@ export const ProjectMapView = forwardRef<ProjectMapViewRef, ProjectMapViewProps>
 </body>
 </html>
       `;
-    }, [lat, lng, captures, project.orthophotoUrl, backendUrl, initialView, initialBasemap, !!onCenterChange]);
+    }, [lat, lng, project.orthophotoUrl, backendUrl, initialView, initialBasemap, !!onCenterChange]);
 
     // Re-measure the Leaflet map when the container is resized (e.g. device rotation),
     // keeping the current center so the view doesn't jump.
